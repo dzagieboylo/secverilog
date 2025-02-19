@@ -508,10 +508,9 @@ sec_label
     { 
       $$ = $2;
     } 
-  | // use default label Low
+  | // don't set a default during parsing
     { 
-      SecType* type = new ConstType();
-      // SecType* type = IndexType::RL;
+	  SecType* type = new ConstType(false);
       $$ = type;
     } 
     ;
@@ -528,13 +527,13 @@ sec_label_comp
   | IDENTIFIER
     { 
       perm_string name = lex_strings.make($1);
-      SecType* type = new ConstType(name);
+      SecType* type = new ConstType(name, true);
       $$ = type;
     }
   | IDENTIFIER sec_arg_list
     { 
       perm_string name = lex_strings.make($1);
-      SecType* type = new IndexType(name, *$2);
+      SecType* type = new IndexType(name, *$2, true);
       $$ = type;
     } 
   | IDENTIFIER '(' K_next IDENTIFIER ')'
@@ -544,21 +543,21 @@ sec_label_comp
       expr = nextify_perm_string(expr);
       auto *tmp = new list<variant<perm_string, verinum>>;
       tmp->push_back(expr);
-      SecType* type = new IndexType(name, *tmp);
+      SecType* type = new IndexType(name, *tmp, true);
       $$ = type;
     }
   | sec_label_comp K_join sec_label_comp
     {
-      $$ = new JoinType ($1, $3);
+      $$ = new JoinType ($1, $3, true);
     }
   | sec_label_comp K_meet sec_label_comp
     {
-      $$ = new MeetType ($1, $3);
+      $$ = new MeetType ($1, $3, true);
     }
   | '|' IDENTIFIER '|' sec_label_comp
     {
       perm_string index = lex_strings.make($2);
-      SecType* type = new QuantType(index, $4);
+      SecType* type = new QuantType(index, $4, true);
       $$ = type;
     }
   | '(' sec_label_comp ')'
@@ -567,7 +566,7 @@ sec_label_comp
   }
   | // use default label Low
     { 
-      SecType* type = ConstType::BOT;
+      SecType* type = new ConstType(false);
       $$ = type;
     } 
   ;
@@ -593,18 +592,18 @@ IDENTIFIER { auto tmp = lex_strings.make($1); delete[] $1;
 base_type
   : K_seq
     {
-        BaseType* btype = new SeqType;
+        BaseType* btype = new SeqType(true);
         $$ = btype;
     }
   | K_com
     {
-        BaseType* btype = new ComType;
+        BaseType* btype = new ComType(true);
         $$ = btype;
     }
-  | // use default base type of com
+  | // assume no default, infer based on first assignment found (= vs. <=)
     {
-        BaseType* btype = new ComType;
-        $$ = btype;
+	  BaseType* btype = new ComType(false);
+      $$ = btype;
     }
   ; 
   
@@ -629,7 +628,7 @@ block_item_decl
 		  pform_set_net_range_type($8, $5, $4, dtype, st, bt);
           // Generate extra declaration for the nextified signal
           if($6->isSeqType()){
-              BaseType*nt = new NextType();
+              BaseType*nt = new NextType(bt->isExplicit());
 		      pform_set_net_range_type(nexted_names, $5, $4, dtype, st, nt);
            }
 		  if ($1) delete $1;
@@ -653,7 +652,7 @@ block_item_decl
 		  pform_set_net_range_type($7, 0, $4, dtype, st, bt);
           // Generate extra declaration for the nextified signal.
           if(bt->isSeqType()){
-              BaseType*nt = new NextType();
+              BaseType*nt = new NextType(bt->isExplicit());
               pform_set_net_range_type(nexted_names, 0, $4, dtype, st, nt);
           }
 		  if ($1) delete $1;
@@ -2323,7 +2322,7 @@ module_item
 		  pform_makewire(@2, $5, $4, $9, $2,
 				 NetNet::NOT_A_PORT, dtype, st, bt, $1);
           if($7->isSeqType()){
-              BaseType*nt = new NextType();
+              BaseType*nt = new NextType($7->isExplicit());
               pform_makewire(@2, $5, $4, nexted_list, $2,
 		    	 NetNet::NOT_A_PORT, dtype, st, nt, $1);
           }   
@@ -2353,7 +2352,7 @@ module_item
 				 str_strength, $9, $2, dtype, st, bt);
           if(bt->isSeqType()){
             //TODO this is untested
-            BaseType*nt = new NextType();
+            BaseType*nt = new NextType(bt->isExplicit());
             pform_makewire(@2, $5, $4, nexted_list, $2,
 		      NetNet::NOT_A_PORT, dtype, st, nt, $1);
           }
@@ -2381,7 +2380,7 @@ module_item
 		  pform_makewire(@2, 0, $4, 0, $5, $8, $2, dtype, st, bt);
           if(bt->isSeqType()){
             //TODO this is untested
-            BaseType*nt = new NextType();
+            BaseType*nt = new NextType(bt->isExplicit());
 		    pform_makewire(@2, 0, $4, 0, $5, nexted_list, $2, dtype, st, nt);
           }
 		  if ($1) {
@@ -2411,7 +2410,7 @@ module_item
             pform_set_port_type(@1, $7, $3, $2, $1, st, bt);
             if(bt->isSeqType()){
               /* previous copy is needed here */
-              BaseType*nt = new NextType();
+              BaseType*nt = new NextType(bt->isExplicit());
               pform_set_port_type(@1, nexted_list, range, $2, $1, st, nt);
             }
         }
@@ -2429,7 +2428,7 @@ module_item
             pform_makewire(@1, $4, $3, $7, $2, $1, IVL_VT_NO_TYPE, st, bt, 0,
 		                 SR_BOTH);
             if(bt->isSeqType()){
-                BaseType*nt = new NextType();
+                BaseType*nt = new NextType(bt->isExplicit());
                 pform_makewire(@1, $4, $3, nexted_names, $2, $1, IVL_VT_NO_TYPE, st, nt, 0,
 		                 SR_BOTH);
             }
@@ -2449,7 +2448,7 @@ module_item
 		  pform_makewire(@1, $4, $3, tmp, $2, NetNet::POUTPUT,
 		                 IVL_VT_NO_TYPE, st, bt, 0, SR_BOTH);
           if(bt->isSeqType()){
-              BaseType*nt = new NextType();
+              BaseType*nt = new NextType(bt->isExplicit());
 		      pform_makewire(@1, $4, $3, nexted_names, $2, NetNet::POUTPUT,
 		                 IVL_VT_NO_TYPE, st, nt, 0, SR_BOTH);
           }
@@ -2474,7 +2473,7 @@ module_item
           pform_makewire(@1, $4, $3, $7, $2, NetNet::PINPUT,
 				 IVL_VT_NO_TYPE, st, bt, 0);
           if(bt->isSeqType()){
-              BaseType*nt = new NextType();
+              BaseType*nt = new NextType(bt->isExplicit());
               pform_makewire(@1, $4, $3, nexted_names, $2, NetNet::PINPUT,
 				 IVL_VT_NO_TYPE, st, nt, 0);
           }
@@ -2490,7 +2489,7 @@ module_item
 				 IVL_VT_NO_TYPE, st, bt, 0);
           list<perm_string>* nexted_names = nextify_perm_strings($7);
           if(bt->isSeqType()){
-            BaseType*nt = new NextType();
+            BaseType*nt = new NextType(bt->isExplicit());
             pform_makewire(@1, $4, $3, nexted_names, $2, NetNet::PINOUT,
 				 IVL_VT_NO_TYPE, st, nt, 0);
           }

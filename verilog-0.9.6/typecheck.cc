@@ -32,6 +32,7 @@
 #include "PSpec.h"
 #include "compiler.h"
 #include "genvars.h"
+#include "infer.h"
 #include "ivl_assert.h"
 #include "netlist.h"
 #include "netmisc.h"
@@ -350,7 +351,32 @@ Statement *PAssignNB::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
   if (debug_typecheck)
     cerr << "Nextify " << *lval_ << endl;
   assert(lval_);
+  auto ident = dynamic_cast<PEIdent *>(lval_);
+  BaseType* expected = new SeqType(true);//must be set to explicit  
+  bool success = infer_baseType(env, ident, expected);
+  if (!success) {
+    auto msg = new std::string("tried to use assign statement on seq var: ");
+    *msg += ident->get_name().str();
+    *msg += " on line ";
+    *msg += get_fileline();
+    throw std::runtime_error(*msg);
+  }
+
   lval_ = lval_->next_cycle_transform(printer, env);
+  return this;
+}
+
+Statement *PAssign::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
+  auto ident = dynamic_cast<PEIdent *>(lval_);
+  BaseType* expected = new ComType(true);//must be set to explicit
+  bool success = infer_baseType(env, ident, expected);
+  if (!success) {
+    auto msg = new std::string("tried to use blocking assign on seq var: ");
+    *msg += ident->get_name().str();
+    *msg += " on line ";
+    *msg += get_fileline();
+    throw std::runtime_error(*msg);
+  }
   return this;
 }
 
@@ -445,7 +471,10 @@ PExpr *PEIdent::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
     if (debug_typecheck) {
       cerr << "Nextify " << path() << " to " << newPath << endl;
     }
-    return new PEIdent(newPath);
+    auto result = new PEIdent(newPath);
+    env.varsToBase[result->get_name()] = new NextType(true);
+    env.varsToType[result->get_name()] = env.varsToType[get_name()];
+    return result;
   }
   return this;
 }
@@ -1393,6 +1422,16 @@ void PGAssign::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate pred,
     cerr << "assign " << *pin(0) << " = " << *pin(1) << ";" << endl;
   }
 
+  auto ident = dynamic_cast<PEIdent *>(pin(0));
+  BaseType* expected = new ComType(true);
+  bool success = infer_baseType(env, ident, expected);
+  if (!success) {
+    auto msg = new std::string("tried to use blocking assign on seq var: ");
+    *msg += ident->get_name().str();
+    *msg += " on line ";
+    *msg += get_fileline();
+    throw std::runtime_error(*msg);
+  }
   stringstream ss;
   ss << "assign " << *pin(0) << " = " << *pin(1) << " @" << get_fileline();
   Predicate post;
@@ -1611,9 +1650,10 @@ void PAssign::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
   }
 
   auto ident = dynamic_cast<PEIdent *>(lval_);
-  if (ident && env.varsToBase.contains(ident->get_name()) &&
-      env.varsToBase[ident->get_name()]->isSeqType()) {
-    auto msg = new std::string("tried to use blocking assign on seq var: ");
+  BaseType* expected = new ComType(true);//must be set to explicit
+  bool success = infer_baseType(env, ident, expected);
+  if (!success) {
+    auto msg = new std::string("tried to use nonblocking assign on nonseq var: ");
     *msg += ident->get_name().str();
     *msg += " on line ";
     *msg += get_fileline();
@@ -1646,17 +1686,15 @@ void PAssignNB::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
   }
 
   auto ident = dynamic_cast<PEIdent *>(lval_);
-  if (ident && env.varsToBase.contains(ident->get_name()) &&
-      !env.varsToBase[ident->get_name()]->isNextType() &&
-      !env.varsToBase[ident->get_name()]->isSeqType()) {
-    auto msg =
-        new std::string("tried to use nonblocking assign on nonseq var: ");
+  BaseType* expected = new NextType(true);//must be set to explicit
+  bool success = infer_baseType(env, ident, expected);
+  if (!success) {
+    auto msg = new std::string("tried to use nonblocking assign on nonseq var: ");
     *msg += ident->get_name().str();
     *msg += " on line ";
     *msg += get_fileline();
     throw std::runtime_error(*msg);
   }
-
   stringstream ss;
   ss << *lval() << " <= " << *rval() << " @" << get_fileline();
 

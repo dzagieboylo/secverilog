@@ -148,6 +148,7 @@ public:
   explicit PAssign(PExpr *lval, PExpr *de, PExpr *ex);
   explicit PAssign(PExpr *lval, PExpr *cnt, PEventStatement *de, PExpr *ex);
   explicit PAssign(PExpr *lval, PExpr *ex, bool is_constant);
+  virtual Statement *next_cycle_transform(SexpPrinter &printer, TypeEnv &env);
   ~PAssign();
 
   virtual void dump(ostream &out, unsigned ind) const;

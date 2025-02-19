@@ -45,12 +45,12 @@ void dumpZ3Func(SexpPrinter &printer, perm_string name, list<str_or_num> args) {
 ConstType *ConstType::TOP = new ConstType(lex_strings.make("HIGH"));
 ConstType *ConstType::BOT = new ConstType(lex_strings.make("LOW"));
 
-ConstType::ConstType() {
+ConstType::ConstType(bool isExplicit) {
   name = lex_strings.make("LOW");
-  // setBaseType(new ComType());
+  _isExplicit = isExplicit;
 }
 
-ConstType::ConstType(perm_string n) {
+ConstType::ConstType(perm_string n, bool isExplicit) {
   // currently, only support Low and High
   if (n == "Low" || n == "L")
     name = lex_strings.make("LOW");
@@ -59,6 +59,7 @@ ConstType::ConstType(perm_string n) {
   else {
     name = n;
   }
+  _isExplicit = isExplicit;
 }
 
 ConstType::~ConstType() {}
@@ -109,7 +110,7 @@ void SecType::emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod) {
 
 /* type variables */
 
-VarType::VarType(perm_string varname) { varname_ = varname; }
+VarType::VarType(perm_string varname, bool isExplicit) { varname_ = varname; _isExplicit = isExplicit; }
 
 VarType::~VarType() {}
 
@@ -147,9 +148,10 @@ list<str_or_num> wllist(1, perm_string::literal("WriteLabel"));
 IndexType *IndexType::RL = new IndexType(perm_string::literal("Par"), rllist);
 IndexType *IndexType::WL = new IndexType(perm_string::literal("Par"), wllist);
 
-IndexType::IndexType(perm_string name, const list<str_or_num> &exprs) {
+IndexType::IndexType(perm_string name, const list<str_or_num> &exprs, bool isExplicit) {
   name_  = name;
   exprs_ = exprs;
+  _isExplicit = isExplicit;
 }
 
 IndexType::~IndexType() {}
@@ -259,7 +261,8 @@ bool IndexType::hasExpr(perm_string str) {
           exprs_.end());
 }
 
-JoinType::JoinType(SecType *ty1, SecType *ty2) {
+JoinType::JoinType(SecType *ty1, SecType *ty2, bool isExplicit) {
+  _isExplicit = isExplicit;
   SecType *st1  = ty1->simplify();
   SecType *st2  = ty2->simplify();
   JoinType *jt1 = dynamic_cast<JoinType *>(st1);
@@ -397,9 +400,10 @@ bool JoinType::hasExpr(perm_string str) {
   return comp1_->hasExpr(str) || comp2_->hasExpr(str);
 }
 
-MeetType::MeetType(SecType *ty1, SecType *ty2) {
+MeetType::MeetType(SecType *ty1, SecType *ty2, bool isExplicit) {
   comp1_ = ty1;
   comp2_ = ty2;
+  _isExplicit = isExplicit;
 }
 
 MeetType::~MeetType() {}
@@ -494,10 +498,11 @@ void MeetType::emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod) {
 //---------------------------------------------
 // QuantType
 //---------------------------------------------
-QuantType::QuantType(perm_string index_var, SecType *type) {
+QuantType::QuantType(perm_string index_var, SecType *type, bool isExplicit) {
   _index_var = index_var;
   _name      = lex_strings.make("TODO");
   _sectype   = type;
+  _isExplicit = isExplicit;
 }
 
 void QuantType::collect_dep_expr(set<perm_string> &m) {
@@ -522,13 +527,14 @@ SecType *QuantType::next_cycle(TypeEnv &env) {
 
 PolicyType::PolicyType(SecType *lower, perm_string cond_name,
                        const list<str_or_num> &static_exprs,
-                       const list<str_or_num> &dynamic_exprs, SecType *upper) {
+                       const list<str_or_num> &dynamic_exprs, SecType *upper, bool isExplicit) {
   _isNext    = false;
   _lower     = lower;
   _cond_name = cond_name;
   _static    = static_exprs;
   _dynamic   = dynamic_exprs;
   _upper     = upper;
+  _isExplicit = isExplicit;
 }
 
 bool PolicyType::equals(SecType *st) {

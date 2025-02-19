@@ -21,11 +21,6 @@ reg[1:0] {Par next_state} next_state;
 reg[15:0] seq {L} cur_timer;
 reg[15:0] {L} next_timer;
 
-initial begin  // initialization
-    mode = 0;
-    cur_state = 0;
-    cur_timer = 10;
-end
     
 always @(posedge clk) begin
     cur_state <= next_state;

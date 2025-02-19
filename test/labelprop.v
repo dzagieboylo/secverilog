@@ -5,8 +5,8 @@ module labelprop(
 		 input seq {LH l_in} d_in
 		 );
 
-   reg seq {L} n_lbl;
-   reg seq {LH n_lbl} n_data;
+   reg {L} n_lbl;
+   reg {LH n_lbl} n_data; //testing com->seq inference
 
    reg seq {L} n_lbl_2;
    reg seq {LH n_lbl_2} n_data_2;

@@ -76,9 +76,6 @@ class SecType {
 
   // Manipulate the types.
 public:
-  // BaseType*base_type;
-  // void setBaseType(BaseType*b) { base_type = b;}
-  // BaseType* getBaseType() { assert(base_type); return base_type; }
 
   virtual void dump(SexpPrinter &printer) {}
   virtual bool hasBottom() { return false; }
@@ -103,13 +100,18 @@ public:
     return this;
   }
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod);
+  //This returns true if it was explicitly annotated by the user (and thus shouldn't be changed).
+  virtual bool isExplicit() { return _isExplicit; }
+
+protected:
+  bool _isExplicit = true;
 };
 
 class ConstType : public SecType {
 
 public:
-  ConstType();
-  ConstType(perm_string name);
+  ConstType(bool isExplicit = false);
+  ConstType(perm_string name, bool isExplicit = false);
   ~ConstType();
   void dump(SexpPrinter &printer) { printer << name.str(); }
   bool hasBottom() { return name == "LOW"; }
@@ -131,7 +133,7 @@ private:
 class VarType : public SecType {
 
 public:
-  VarType(perm_string varname);
+  VarType(perm_string varname, bool isExplicit = false);
   ~VarType();
   VarType &operator=(const VarType &);
 
@@ -151,7 +153,7 @@ private:
 class IndexType : public SecType {
 
 public:
-  IndexType(perm_string name, const list<str_or_num> &exprs);
+  IndexType(perm_string name, const list<str_or_num> &exprs, bool isExplicit = false);
   ~IndexType();
   IndexType &operator=(const IndexType &);
   void dump(SexpPrinter &printer) { dumpZ3Func(printer, name_, exprs_); }
@@ -193,7 +195,7 @@ private:
 class JoinType : public SecType {
 
 public:
-  JoinType(SecType *, SecType *);
+  JoinType(SecType *, SecType *, bool isExplicit = false);
   ~JoinType();
   JoinType &operator=(const JoinType &);
   void dump(SexpPrinter &printer) {
@@ -229,7 +231,7 @@ private:
 class MeetType : public SecType {
 
 public:
-  MeetType(SecType *, SecType *);
+  MeetType(SecType *, SecType *, bool isExplicit = false);
   ~MeetType();
   MeetType &operator=(const MeetType &);
   void dump(SexpPrinter &printer) {
@@ -265,7 +267,7 @@ private:
 class QuantType : public SecType {
 
 public:
-  QuantType(perm_string index_var, SecType *st);
+  QuantType(perm_string index_var, SecType *st, bool isExplicit = false);
   ~QuantType();
 
   void collect_dep_expr(set<perm_string> &m);
@@ -332,7 +334,7 @@ class PolicyType : public SecType {
 public:
   PolicyType(SecType *lower, perm_string cond_name,
              const list<str_or_num> &static_exprs,
-             const list<str_or_num> &dynamic_exprs, SecType *upper);
+             const list<str_or_num> &dynamic_exprs, SecType *upper, bool isExplicit = false);
   ~PolicyType();
   virtual SecType *next_cycle(TypeEnv &env);
   virtual bool hasExpr(perm_string str);
