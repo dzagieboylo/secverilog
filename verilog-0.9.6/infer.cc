@@ -54,7 +54,7 @@ bool infer_secType(TypeEnv& env, PEIdent* ident, SecType* targetType) {
 
 void collect_type_constraints(map<perm_string, Module *> modules,
  map<perm_string, BaseTypeMap*> & baseTypes, map<perm_string, SecTypeMap*> &secTypes,
- map<perm_string, set<Constraint*>*> &consts) {
+ map<perm_string, set<Constraint*>*> &consts, map<perm_string, set<perm_string>> defAssigns) {
     for (auto entry : modules) {
         auto name = entry.first;
         auto module = entry.second;
@@ -104,7 +104,7 @@ void collect_type_constraints(map<perm_string, Module *> modules,
                     throw "Module definition not found!";
                 }
             } else if (assign) {
-                collect_type_constraints(assign, *modConsts);
+                collect_type_constraints(assign, *modConsts, *baseTypes[name], *secTypes[name], defAssigns[name]);
             } else {
                 cerr << "Found unexpected PGate type! " << endl;
             }
@@ -116,9 +116,11 @@ void collect_type_constraints(map<perm_string, Module *> modules,
    
 }
 
-void collect_type_constraints(PGAssign* assign, set<Constraint*>& consts) {
+void collect_type_constraints(PGAssign* assign, set<Constraint*>& consts,
+    BaseTypeMap &baseTypes, SecTypeMap &secTypes, set<perm_string> &defAssgns) {
     auto left = assign->pin(0);
     auto right = assign->pin(1);
+    collect_assignment_constraint(left, right, ConstType::BOT, false, baseTypes, secTypes, defAssgns, consts);
 }
 
 void collect_type_constraints(PGModule* mod, set<Constraint*>& consts, perm_string name,
@@ -153,11 +155,7 @@ void collect_type_constraints(PGModule* mod, set<Constraint*>& consts, perm_stri
 }
 void collect_type_constraints(PProcess* assign, set<Constraint*>& consts) {}
 
-
-/**
- * Generate assignment typing constraints (either noblocking or blocking).
- */
-void collect_assignment_constraint(PExpr *lhs, PExpr *rhs, bool is_blocking, BaseTypeMap baseTypes,
+void collect_assignment_constraint(PExpr *lhs, PExpr *rhs, SecType* pc, bool is_blocking, BaseTypeMap &baseTypes, SecTypeMap &secTypes,
                           set<perm_string> &defAssgns, set<Constraint*> consts) {
   // when the RHS is a PETernary expression, i.e. e1?e2:e3, we first
   // translate to the equivalent statements
@@ -169,18 +167,18 @@ void collect_assignment_constraint(PExpr *lhs, PExpr *rhs, bool is_blocking, Bas
     lbase           = lhs->check_base_type(baseTypes);
     if (lident != NULL) {
       // if lhs is v[x], only want to put type(v) in the type
-      ltype_orig = lident->typecheckName(env, false);
+      ltype_orig = lident->typecheckName(baseTypes, secTypes, false);
       // want next cycle version if is NextType
-      ltype = lident->typecheckName(env, lbase->isNextType());
+      ltype = lident->typecheckName(baseTypes, secTypes, lbase->isNextType());
     } else {
       auto msg = new std::string("Assigned to non identifier on LHS: ");
       *msg += lhs->get_name().str();
       throw std::runtime_error(*msg);
     }
 
-    rtype = new JoinType(rhs->typecheck(env), env.pc);
+    rtype = new JoinType(rhs->typecheck(baseTypes, secTypes), pc);
     // if lhs is v[x], want to include type(x) in the rhs type
-    rtype = new JoinType(rtype, lident->typecheckIdx(env));
+    rtype = new JoinType(rtype, lident->typecheckIdx(baseTypes, secTypes));
     // if lhs is NOT a quant type and this is an indexed expression
     // (i.e., we are only assigning to part of the variable)
     // then add ltype_orig into rtype
@@ -188,44 +186,32 @@ void collect_assignment_constraint(PExpr *lhs, PExpr *rhs, bool is_blocking, Bas
       rtype = new JoinType(rtype, ltype_orig);
     }
     // is com type and has reflexive label
-    bool isRecursiveCom =
-        !lbase->isNextType() && ltype->hasExpr(lhs->get_name());
+    bool isRecursiveCom = !lbase->isNextType() && ltype->hasExpr(lhs->get_name());
     if (isRecursiveCom && is_blocking) {
         //For now, don't support this
         cerr << "Warning! Recursive Combinational Labels not supported with constraint inference yet." << endl;
     } else {
-      // is seq type or non rec dep com
-      typecheck_assignment_constraint(printer, ltype, rtype, precond, note,
-                                      NULL, env);
-      // need no-sensitive-upgrade check when:
-      //   - lident has a recursive dep type
-      //   - lident is not definitely assigned
-      //   - lident is a NEXT type (i.e., it's a register assignment)
-      if (!defAssgns.contains(lhs->get_name()) &&
-          (ltype_orig->isDepType() && lbase->isNextType())) {
-        PEIdent *origName = lident->get_this_cycle_name();
-        // is recursive if ltype contains lident
-        if (ltype_orig->hasExpr(origName->get_name())) {
-          // either  isDefAssigned(lident) OR forall contexts.
-          //  (leq pc ltype_orig)
-          //  rtype also flows to cur cycle label of lident in any context
-          string newNote = note + "--No-sensitive-upgrade-check;";
-          typecheck_assignment_constraint(printer, ltype_orig, env.pc, precond,
-                                          newNote, origName, env);
+        // is seq type or non rec dep com
+        Constraint* flowsTo = new Constraint(ltype, rtype, NULL, NULL);
+        consts.insert(flowsTo);
+        // need no-sensitive-upgrade check when:
+        //   - lident has a recursive dep type
+        //   - lident is not definitely assigned
+        //   - lident is a NEXT type (i.e., it's a register assignment)
+        if (!defAssgns.contains(lhs->get_name()) &&
+            (ltype_orig->isDepType() && lbase->isNextType())) {
+            PEIdent *origName = lident->get_this_cycle_name();
+            // is recursive if ltype contains lident
+            if (ltype_orig->hasExpr(origName->get_name())) {
+                Constraint* flowsTo = new Constraint(ltype_orig, pc, NULL, NULL);
+                consts.insert(flowsTo);
+            }
         }
-      }
     }
   } else {
     auto tmp = ternary->translate(lhs, is_blocking);
-    tmp->typecheck(printer, env, precond, defAssgns);
+    //TODO collect constraints
+    //tmp->typecheck(printer, env, precond, defAssgns);
     delete tmp;
   }
-}
-
-SecType* generate_rhs_type(PExpr* rhs) {
-    return NULL;
-}
-
-SecType* generate_lhs_type(PExpr* lhs) {
-    return NULL;
 }

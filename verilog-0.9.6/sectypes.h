@@ -86,7 +86,7 @@ public:
   virtual SecType *subst(perm_string e1, const str_or_num &e2) { return this; }
   virtual SecType *subst(const map<perm_string, str_or_num> &m) { return this; }
   virtual bool equals(SecType *st) { return false; }
-  virtual SecType *next_cycle(TypeEnv &env) { return this; }
+  virtual SecType *next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes) { return this; }
   virtual void collect_dep_expr(set<perm_string> &m){};
   virtual bool isDepType() { return false; };
   virtual bool hasExpr(perm_string str) { return false; };
@@ -184,7 +184,7 @@ public:
   list<str_or_num> get_exprs() const;
   virtual SecType *subst(perm_string e1, const str_or_num &e2);
   virtual SecType *subst(const map<perm_string, str_or_num> &m);
-  virtual SecType *next_cycle(TypeEnv &env);
+  virtual SecType *next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   void collect_dep_expr(set<perm_string> &m);
   SecType *freshVars(unsigned int lineno, map<perm_string, perm_string> &m);
   bool hasExpr(perm_string str);
@@ -224,7 +224,7 @@ public:
   virtual SecType *subst(perm_string e1, const str_or_num &e2);
   virtual SecType *subst(const map<perm_string, str_or_num> &m);
   bool equals(SecType *st);
-  virtual SecType *next_cycle(TypeEnv &env);
+  virtual SecType *next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   void collect_dep_expr(set<perm_string> &m);
   SecType *freshVars(unsigned int lineno, map<perm_string, perm_string> &m);
   bool hasExpr(perm_string str);
@@ -260,7 +260,7 @@ public:
   bool equals(SecType *st);
   virtual SecType *subst(perm_string e1, const str_or_num &e2);
   virtual SecType *subst(const map<perm_string, str_or_num> &m);
-  virtual SecType *next_cycle(TypeEnv &env);
+  virtual SecType *next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   void collect_dep_expr(set<perm_string> &m);
   SecType *freshVars(unsigned int lineno, map<perm_string, perm_string> &m);
   bool hasExpr(perm_string str);
@@ -279,7 +279,7 @@ public:
   ~QuantType() {}
 
   void collect_dep_expr(set<perm_string> &m);
-  virtual SecType *next_cycle(TypeEnv &env);
+  virtual SecType *next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   void dump(SexpPrinter &printer) { _sectype->dump(printer); }
 
   SecType *getInnerType() { return _sectype; }
@@ -344,7 +344,7 @@ public:
              const list<str_or_num> &static_exprs,
              const list<str_or_num> &dynamic_exprs, SecType *upper, bool isExplicit = true);
   ~PolicyType() {}
-  virtual SecType *next_cycle(TypeEnv &env);
+  virtual SecType *next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   virtual bool hasExpr(perm_string str);
   virtual SecType *subst(perm_string e1, const str_or_num &e2);
   virtual SecType *subst(const map<perm_string, str_or_num> &m);

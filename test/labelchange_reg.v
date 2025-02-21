@@ -1,6 +1,6 @@
 module labelchange_reg(
-    input  clk,
-    input  rst,
+    input  {L} clk,
+    input  {L} rst,
     input  data_in,
     input  w_en2,
     input  lbl_in_2,

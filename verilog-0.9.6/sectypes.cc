@@ -194,11 +194,11 @@ SecType *IndexType::subst(const map<perm_string, str_or_num> &m) {
   return new IndexType(name_, substlist);
 }
 
-SecType *IndexType::next_cycle(TypeEnv &env) {
+SecType *IndexType::next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
   list<str_or_num> nextlist{};
   std::transform(TRANSFORM_IT(exprs_, nextlist), [&](const auto &n) {
     auto str = std::get_if<perm_string>(&n);
-    if (str && env.varsToBase[*str]) {
+    if (str && baseTypes[*str]) {
       auto tmp = str_or_num(nextify_perm_string(*str));
       return tmp;
     } else
@@ -340,11 +340,11 @@ SecType *JoinType::subst(const map<perm_string, str_or_num> &m) {
     return this;
 }
 
-SecType *JoinType::next_cycle(TypeEnv &env) {
-  SecType *comp1new = comp1_->next_cycle(env);
-  SecType *comp2new = comp2_->next_cycle(env);
+SecType *JoinType::next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
+  SecType *comp1new = comp1_->next_cycle(baseTypes, secTypes);
+  SecType *comp2new = comp2_->next_cycle(baseTypes, secTypes);
   if (comp1_ != comp1new || comp2_ != comp2new) {
-    return new JoinType(comp1_->next_cycle(env), comp2_->next_cycle(env));
+    return new JoinType(comp1_->next_cycle(baseTypes, secTypes), comp2_->next_cycle(baseTypes, secTypes));
   } else
     return this;
 }
@@ -430,11 +430,11 @@ SecType *MeetType::subst(const map<perm_string, str_or_num> &m) {
     return this;
 }
 
-SecType *MeetType::next_cycle(TypeEnv &env) {
-  SecType *comp1new = comp1_->next_cycle(env);
-  SecType *comp2new = comp2_->next_cycle(env);
+SecType *MeetType::next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
+  SecType *comp1new = comp1_->next_cycle(baseTypes, secTypes);
+  SecType *comp2new = comp2_->next_cycle(baseTypes, secTypes);
   if (comp1_ != comp1new || comp2_ != comp2new)
-    return new MeetType(comp1_->next_cycle(env), comp2_->next_cycle(env));
+    return new MeetType(comp1_->next_cycle(baseTypes, secTypes), comp2_->next_cycle(baseTypes, secTypes));
   else
     return this;
 }
@@ -518,8 +518,8 @@ void QuantType::collect_dep_expr(set<perm_string> &m) {
   }
 }
 
-SecType *QuantType::next_cycle(TypeEnv &env) {
-  return new QuantType(_index_var, _sectype->next_cycle(env));
+SecType *QuantType::next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
+  return new QuantType(_index_var, _sectype->next_cycle(baseTypes, secTypes));
 }
 //----------------------------------------------
 // Policy Type
@@ -548,19 +548,19 @@ bool PolicyType::equals(SecType *st) {
   }
 }
 
-SecType *PolicyType::next_cycle(TypeEnv &env) {
+SecType *PolicyType::next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
   list<str_or_num> *nextlist = new list<str_or_num>;
   for (auto &dyn : _dynamic) {
     perm_string *str = std::get_if<perm_string>(&dyn);
-    if (str && env.varsToBase.contains(*str) && env.varsToBase.at(*str) &&
-        env.varsToBase.at(*str)->isSeqType()) {
+    if (str && baseTypes.contains(*str) && baseTypes.at(*str) &&
+        baseTypes.at(*str)->isSeqType()) {
       nextlist->push_back(nextify_perm_string(*str));
     } else {
       nextlist->push_back(dyn);
     }
   }
-  PolicyType *res = new PolicyType(_lower->next_cycle(env), _cond_name, _static,
-                                   *nextlist, _upper->next_cycle(env));
+  PolicyType *res = new PolicyType(_lower->next_cycle(baseTypes, secTypes), _cond_name, _static,
+                                   *nextlist, _upper->next_cycle(baseTypes, secTypes));
   res->_isNext    = true;
   return res;
 }

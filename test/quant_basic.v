@@ -1,7 +1,7 @@
 module quant_basic();
 
 
-   wire zero;
+   wire {L} zero;
 
    assign zero = 0;   
    
@@ -42,9 +42,9 @@ module quant_basic();
 
    wire [1:0] {|i| LH i} f;
 
-   wire       g;
+   wire {L}      g;
 
-   wire       g2;
+   wire {L}      g2;
 
    wire       {H} g3;
    
@@ -66,7 +66,7 @@ module quant_basic();
 
    wire [1:0] {|i| LH zero} i;
 
-   wire       j;
+   wire {L}      j;
 
 
    //should pass

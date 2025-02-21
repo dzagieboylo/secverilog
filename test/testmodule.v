@@ -1,4 +1,4 @@
-`include "deptype-example.v"
+`include "deptype.v"
 
 module testmodule(
   input {L} clk,

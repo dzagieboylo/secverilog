@@ -1,4 +1,4 @@
-module Two_Input_Mux
+module mux
 (
 	input {D1}          in1,
 	input {D2}          in2,

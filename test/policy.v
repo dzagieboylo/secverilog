@@ -1,8 +1,8 @@
 module policy(
-	      input 	  clk,
-	      input 	  rst,
-	      input 	  invalid,
-	      input [4:0] missId,
+	      input 	  {L} clk,
+	      input 	  {L} rst,
+	      input 	  {L} invalid,
+	      input [4:0] {L} missId,
 	      input [4:0] {erase(Valid newSpecValid,newSpecId; miss invalid, missId; newSpecId;H)} newSpecId,
 	      input 	  {erase(Valid newSpecValid,newSpecId; miss invalid, missId; newSpecId;H)} newSpecValid,
 	      output 	  {H} out

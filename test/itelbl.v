@@ -1,4 +1,4 @@
-module labelprop(
+module itelbl(
 		 input {L} clk,
 		 input seq {L} l_valid,
 		 input [3:0] seq {L} l_status
@@ -46,6 +46,6 @@ module labelprop(
       final_data <= (old_lbl == 0) ? tmp_data : final_data;      
    end
    
-endmodule // labelprop
+endmodule // itelbl
 
    

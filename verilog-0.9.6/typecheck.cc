@@ -425,7 +425,7 @@ bool PAssign_::collect_dep_invariants(SexpPrinter &printer, TypeEnv &env,
     rval()->collect_idens(env.dep_exprs);
     return true;
   } else {
-    SecType *ltyp = lval()->typecheck(env);
+    SecType *ltyp = lval()->typecheck(env.varsToBase, env.varsToType);
     bool isRecDep = ltyp->isDepType() && ltyp->hasExpr(lval()->get_name());
     // cerr << lval()->get_name() << " is recdep " << isRecDep << endl;
     if (isRecDep) {
@@ -935,7 +935,7 @@ void checkUnassignedPaths(SexpPrinter &printer, TypeEnv &env, Module &m) {
           auto applied = dynamic_cast<QuantType *>(sectype->apply_index(idx));
           idx          = new PENumber(new verinum(i));
           auto next_sectype = dynamic_cast<QuantType *>(
-              sectype->next_cycle(env)->apply_index(idx));
+              sectype->next_cycle(env.varsToBase, env.varsToType)->apply_index(idx));
 
           Predicate empty;
           Constraint c(next_sectype, applied, env.invariants, &empty);
@@ -950,7 +950,7 @@ void checkUnassignedPaths(SexpPrinter &printer, TypeEnv &env, Module &m) {
         printer.inList("echo", [&]() { printer.printString(note); });
         printer.inList("assert",
                        [&]() { dump_isnt_assigned_normal(printer, v, env); });
-        auto next_sectype = sectype->next_cycle(env);
+        auto next_sectype = sectype->next_cycle(env.varsToBase, env.varsToType);
         Predicate empty;
         Constraint c(next_sectype, sectype, env.invariants, &empty);
         set<perm_string> empty_genvars;
@@ -1010,9 +1010,6 @@ void Module::typecheck(SexpPrinter &printer, TypeEnv &env,
 
   typecheck_events_(printer, env);
 
-  auto analysis = get_paths(*this, env);
-  env.analysis  = analysis;
-
   if (debug_typecheck)
     cerr << "collecting dependands" << endl;
   CollectDepExprs(printer, env, modules);
@@ -1056,34 +1053,9 @@ void Module::typecheck(SexpPrinter &printer, TypeEnv &env,
     cerr << "collecting dependent invariants" << endl;
   bool foundInvs = CollectDepInvariants(printer, env);
 
-  if (overlap_check)
+  if (overlap_check) {
     dump_no_overlap_anal(printer, *this, env, env.seqVars);
-
-  // TODO probably delete this
-  //  remove an invariant if some variable does not show up
-  if (0) {
-    if (debug_typecheck)
-      cerr << "optimizing invariants" << endl;
-    for (set<Equality *>::iterator invite = env.invariants->invariants.begin();
-         invite != env.invariants->invariants.end();) {
-      set<perm_string> vars, diff;
-      (*invite)->left->collect_dep_expr(vars);
-      (*invite)->right->collect_dep_expr(vars);
-
-      set<Equality *>::iterator current = invite++;
-
-      // if the invariant has free variables, then remove it
-      for (set<perm_string>::iterator varite = vars.begin();
-           varite != vars.end(); varite++) {
-        if (env.dep_exprs.find(*varite) == env.dep_exprs.end()) {
-          env.invariants->invariants.erase(current);
-          break;
-        }
-      }
-    }
   }
-  // end TODO of delete
-
   printer.lineBreak();
   if (foundInvs) {
     // Only check base conditions if we actually _have_ base conditions
@@ -1109,6 +1081,18 @@ void Module::typecheck(SexpPrinter &printer, TypeEnv &env,
     cerr << "outputting type families" << endl;
   output_type_families(printer, depfun);
 
+  //TODO solve for these as best we can ahead of time
+  // printer.addComment("Declaring unbound labels");
+  // for (auto v : env.varsToType) {
+  //   auto typ = v.second;
+  //   VarType* vartyp = dynamic_cast<VarType*>(typ);
+  //   if (vartyp) {
+  //     printer.startList("declare-fun");
+  //     vartyp->dump(printer);
+  //     printer << "()" << "Label";
+  //     printer.endList();
+  //   }
+  // }
   printer.addComment("assertions to be verified");
 
   if (debug_typecheck) {
@@ -1274,18 +1258,18 @@ void typecheck_assignment(SexpPrinter &printer, PExpr *lhs, PExpr *rhs,
     lbase           = lhs->check_base_type(env.varsToBase);
     if (lident != NULL) {
       // if lhs is v[x], only want to put type(v) in the type
-      ltype_orig = lident->typecheckName(env, false);
+      ltype_orig = lident->typecheckName(env.varsToBase, env.varsToType, false);
       // want next cycle version if is NextType
-      ltype = lident->typecheckName(env, lbase->isNextType());
+      ltype = lident->typecheckName(env.varsToBase, env.varsToType, lbase->isNextType());
     } else {
       auto msg = new std::string("Assigned to non identifier on LHS: ");
       *msg += lhs->get_name().str();
       throw std::runtime_error(*msg);
     }
 
-    rtype = new JoinType(rhs->typecheck(env), env.pc);
+    rtype = new JoinType(rhs->typecheck(env.varsToBase, env.varsToType), env.pc);
     // if lhs is v[x], want to include type(x) in the rhs type
-    rtype = new JoinType(rtype, lident->typecheckIdx(env));
+    rtype = new JoinType(rtype, lident->typecheckIdx(env.varsToBase, env.varsToType));
     // if lhs is NOT a quant type and this is an indexed expression
     // (i.e., we are only assigning to part of the variable)
     // then add ltype_orig into rtype
@@ -1522,7 +1506,7 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
           PWire *port               = (*ite).second;
           NetNet::PortType porttype = port->get_port_type();
 
-          SecType *paramType = param->typecheck(env);
+          SecType *paramType = param->typecheck(env.varsToBase, env.varsToType);
           SecType *pinType   = port->get_sec_type();
           for (std::map<perm_string, perm_string>::iterator substiter =
                    pinSubst.begin();
@@ -1781,7 +1765,7 @@ void PCase::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
     PCase::Item *cur = (*items_)[idx];
     bool need_hypo =
         env.dep_exprs.find(expr_->get_name()) != env.dep_exprs.end();
-    env.pc = new JoinType(expr_->typecheck(env), oldpc);
+    env.pc = new JoinType(expr_->typecheck(env.varsToBase, env.varsToType), oldpc);
     env.pc = env.pc->simplify();
 
     if (need_hypo) {
@@ -1824,7 +1808,7 @@ void PCondit::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
 
   // generate fresh variables for that used in the current pc
   SecType *etype =
-      expr_->typecheck(env); //->freshVars(get_lineno(), subst);
+      expr_->typecheck(env.varsToBase, env.varsToType); //->freshVars(get_lineno(), subst);
   env.pc = new JoinType(etype, oldpc);
   env.pc = env.pc->simplify();
 
@@ -1930,10 +1914,10 @@ void PEventStatement::typecheck(SexpPrinter &printer, TypeEnv &env,
   SecType *oldpc = env.pc;
   // taint pc by the label of trigger event
   if (expr_.count() != 0) {
-    env.pc = new JoinType(env.pc, expr_[0]->expr()->typecheck(env));
+    env.pc = new JoinType(env.pc, expr_[0]->expr()->typecheck(env.varsToBase, env.varsToType));
     for (unsigned idx = 1; idx < expr_.count(); idx += 1)
       env.pc =
-          new JoinType(env.pc, expr_[idx]->expr()->typecheck(env));
+          new JoinType(env.pc, expr_[idx]->expr()->typecheck(env.varsToBase, env.varsToType));
   }
   if (debug_typecheck) {
     cerr << "New PC is: " << *env.pc << endl;
@@ -2022,7 +2006,7 @@ void PForStatement::typecheck(SexpPrinter &printer, TypeEnv &env,
                        get_lineno(), note.str(), true, defAssgn);
 
   SecType *oldpc    = env.pc;
-  SecType *condType = cond_->typecheck(env);
+  SecType *condType = cond_->typecheck(env.varsToBase, env.varsToType);
   env.pc            = new JoinType(condType, oldpc);
   env.pc            = env.pc->simplify();
 
@@ -2286,25 +2270,23 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
   collectBaseTypes(modules, module_base_types); //gather explicit base types
   collectSecTypes(modules, module_sec_types); //gather explicit and missing security types
   for (auto entry : modules) {
-    //update next-cycle names and check seq/com type compliance
-    entry.second->next_cycle_transform(*module_base_types[entry.first], *module_sec_types[entry.first]);
-  }
-
-  //Collect type constraints for each module
-  map<perm_string, set<Constraint*>*> consts;
-  collect_type_constraints(modules, module_base_types, module_sec_types, consts);
-  for (auto entry : modules) {
-
- 
     auto name = entry.first;
     Module *rmod = entry.second;
     TypeEnv *env = new TypeEnv(*module_sec_types[entry.first], *module_base_types[entry.first], ConstType::BOT, rmod);
-    
-    //DEBUG
-    SexpPrinter tmp(cerr, 80);
-    set<perm_string> empty;
-    for (auto c : *consts[name]) {
-        dump_constraint(tmp, *c, empty, *env);
+    //Do are path analysis before re-writing LHS
+    auto analysis = get_paths(*rmod, *env);
+    env->analysis = analysis;
+    //update next-cycle names and check seq/com type compliance
+    entry.second->next_cycle_transform(env->varsToBase, env->varsToType);
+    //Add all of the SEQ vars
+    for (auto entr : env->varsToBase) {
+      if (entr.second->isSeqType()) {
+        auto wiredef = rmod->wires_find(entr.first);
+        //Don't insert input ports into this! even though they are seqvars we don't want them in here
+        if (wiredef && (wiredef->get_port_type() == NetNet::NOT_A_PORT || wiredef->get_port_type() == NetNet::POUTPUT)) {
+          env->seqVars.insert(entr.first);
+        }
+      }
     }
     ofstream z3file;
     string z3filename = string(name.str());

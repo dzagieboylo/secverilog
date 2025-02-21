@@ -37,9 +37,9 @@ void PExpr::collect_used_genvars(set<perm_string> &res, TypeEnv &env) {
   }
 }
 
-SecType *PEBinary::typecheck(TypeEnv &env) const {
-  SecType *ty1 = left_->typecheck(env);
-  SecType *ty2 = right_->typecheck(env);
+SecType *PEBinary::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
+  SecType *ty1 = left_->typecheck(baseTypes, secTypes);
+  SecType *ty2 = right_->typecheck(baseTypes, secTypes);
   return new JoinType(ty1, ty2);
 }
 void PEBinary::collect_idens(set<perm_string> &s) const {
@@ -47,19 +47,19 @@ void PEBinary::collect_idens(set<perm_string> &s) const {
   right_->collect_idens(s);
 }
 
-SecType *PECallFunction::typecheck( TypeEnv &) const {
+SecType *PECallFunction::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
   //	throw "PECallFunction";
   cout << "PECallFunction is ignored" << endl;
   return ConstType::BOT;
 }
 void PECallFunction::collect_idens(set<perm_string> &s) const { return; }
-SecType *PEConcat::typecheck(TypeEnv &env) const {
+SecType *PEConcat::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
   SecType *last = ConstType::BOT;
   if (repeat_ != NULL) {
-    last = repeat_->typecheck(env);
+    last = repeat_->typecheck(baseTypes, secTypes);
   }
   for (unsigned idx = 0; idx < parms_.count(); idx += 1) {
-    last = new JoinType(last, parms_[idx]->typecheck(env));
+    last = new JoinType(last, parms_[idx]->typecheck(baseTypes, secTypes));
   }
   return last;
 }
@@ -72,21 +72,21 @@ void PEConcat::collect_idens(set<perm_string> &s) const {
   }
 }
 
-SecType *PEEvent::typecheck( TypeEnv &) const { throw "PEEvent"; }
+SecType *PEEvent::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const { throw "PEEvent"; }
 void PEEvent::collect_idens(set<perm_string> &s) const { throw "PEEvent"; }
 // float constants have label Low
-SecType *PEFNumber::typecheck( TypeEnv &) const {
+SecType *PEFNumber::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
   return ConstType::BOT;
 }
 void PEFNumber::collect_idens(set<perm_string> &s) const { return; }
-SecType *PEIdent::typecheckName(TypeEnv &env, bool isNext) const {
+SecType *PEIdent::typecheckName(BaseTypeMap &baseTypes, SecTypeMap &secTypes, bool isNext) const {
   perm_string name = peek_tail_name(path_);
 
-  auto tau = env.varsToType[name];
+  auto tau = secTypes[name];
 
   if (tau) {
     if (isNext) {
-      tau = tau->next_cycle(env);
+      tau = tau->next_cycle(baseTypes, secTypes);
     }
     // If this is indexed (e.g., v[x]), they type may also be quantified by
     // index (e.g., {|i| F i} ) If this selects more than one component (i.e.,
@@ -105,19 +105,19 @@ SecType *PEIdent::typecheckName(TypeEnv &env, bool isNext) const {
   }
 }
 
-SecType *PEIdent::typecheckIdx(TypeEnv &env) const {
+SecType *PEIdent::typecheckIdx(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
   SecType *result = ConstType::BOT;
   for (std::list<index_component_t>::const_iterator idxit =
            path_.back().index.begin();
        idxit != path_.back().index.end(); idxit++) {
     if (idxit->msb != NULL) {
-      SecType *tmsb = idxit->msb->typecheck(env);
+      SecType *tmsb = idxit->msb->typecheck(baseTypes, secTypes);
       if (tmsb != ConstType::BOT) {
         result = new JoinType(result, tmsb);
       }
     }
     if (idxit->lsb != NULL) {
-      SecType *tlsb = idxit->msb->typecheck(env);
+      SecType *tlsb = idxit->msb->typecheck(baseTypes, secTypes);
       if (tlsb != ConstType::BOT) {
         result = new JoinType(result, tlsb);
       }
@@ -126,16 +126,16 @@ SecType *PEIdent::typecheckIdx(TypeEnv &env) const {
   return result;
 }
 
-SecType *PEIdent::typecheck(TypeEnv &env) const {
+SecType *PEIdent::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
   // idents are like: varname[bit select]
   // need to join index label with name label
-  SecType *namelbl = typecheckName(env, false);
-  SecType *idxlbl  = typecheckIdx(env);
+  SecType *namelbl = typecheckName(baseTypes, secTypes, false);
+  SecType *idxlbl  = typecheckIdx(baseTypes, secTypes);
   return new JoinType(namelbl, idxlbl);
 }
 
 void PEIdent::collect_index_exprs(set<perm_string> &s, TypeEnv &env) {
-  SecType *appliedType = typecheckName(env, false);
+  SecType *appliedType = typecheckName(env.varsToBase, env.varsToType, false);
   appliedType->collect_dep_expr(s);
 }
 
@@ -153,22 +153,22 @@ void PEIdent::collect_idens(set<perm_string> &s) const {
   }
 }
 // integer constants have label Low
-SecType *PENumber::typecheck( TypeEnv &) const {
+SecType *PENumber::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
   return ConstType::BOT;
 }
 void PENumber::collect_idens(set<perm_string> &s) const { return; }
 
-SecType *PEBoolean::typecheck( TypeEnv &) const {
+SecType *PEBoolean::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
   return ConstType::BOT;
 }
 void PEBoolean::collect_idens(set<perm_string> &s) const { return; }
 
 // string constants have label Low
-SecType *PEString::typecheck( TypeEnv &) const {
+SecType *PEString::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
   return ConstType::BOT;
 }
 void PEString::collect_idens(set<perm_string> &s) const { return; }
-SecType *PETernary::typecheck( TypeEnv &) const {
+SecType *PETernary::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
   //	SecType* lexp = expr_->typecheck(out, varsToType);
   //	SecType* texp = tru_->typecheck(out, varsToType);
   //	SecType* fexp = fal_->typecheck(out, varsToType);
@@ -183,13 +183,13 @@ void PETernary::collect_idens(set<perm_string> &s) const {
   fal_->collect_idens(s);
 }
 
-SecType *PEUnary::typecheck(TypeEnv &env) const {
-  return expr_->typecheck(env);
+SecType *PEUnary::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
+  return expr_->typecheck(baseTypes, secTypes);
 }
 void PEUnary::collect_idens(set<perm_string> &s) const {
   expr_->collect_idens(s);
 }
-SecType *PEDeclassified::typecheck( TypeEnv &) const {
+SecType *PEDeclassified::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
   return this->type;
 }
 void PEDeclassified::collect_idens(set<perm_string> &s) const {
