@@ -19,6 +19,7 @@
  *    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA
  */
 
+#include "basetypes.h"
 #include "LineInfo.h"
 #include "netlist.h"
 #include "pform_types.h"
@@ -37,6 +38,9 @@ class PCondit;
 struct TypeEnv;
 class BaseType;
 class SexpPrinter;
+
+using SecTypeMap = std::map<perm_string, SecType *>;
+
 /*
  * The PExpr class hierarchy supports the description of
  * expressions. The parser can generate expression objects from the
@@ -51,8 +55,8 @@ public:
 
   virtual void dump(ostream &) const;
   virtual void dumpz3(SexpPrinter &) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const = 0;
-  virtual PExpr *next_cycle_transform(SexpPrinter &, TypeEnv &env);
+  virtual SecType *typecheck(TypeEnv &) const = 0;
+  virtual PExpr *next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   virtual void collect_idens(set<perm_string> &s) const { return; };
   virtual void collect_index_exprs(set<perm_string> &s, TypeEnv &) { return; };
   virtual void collect_used_genvars(set<perm_string> &res, TypeEnv &env);
@@ -69,8 +73,7 @@ public:
     return to_wellformed(s);
   };
   virtual PExpr *subst(map<perm_string, perm_string> m) { return this; }
-  virtual BaseType *check_base_type(SexpPrinter &,
-                                    map<perm_string, BaseType *> &varsToBase) {
+  virtual BaseType *check_base_type(map<perm_string, BaseType *> &varsToBase) {
     assert(false);
   }
 
@@ -193,7 +196,7 @@ public:
   virtual void dumpz3(SexpPrinter &printer) const {
     return ex->dumpz3(printer);
   }
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
   virtual bool has_aa_term(Design *des, NetScope *scope) const {
     return ex->has_aa_term(des, scope);
@@ -281,11 +284,10 @@ public:
   virtual verinum *eval_const(Design *des, NetScope *sc) const;
   virtual void dump(ostream &) const;
   virtual void dumpz3(SexpPrinter &) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
 
-  virtual BaseType *check_base_type(SexpPrinter &,
-                                    map<perm_string, BaseType *> &varsToBase);
+  virtual BaseType *check_base_type(map<perm_string, BaseType *> &varsToBase);
 
   virtual bool has_aa_term(Design *des, NetScope *scope) const;
 
@@ -336,7 +338,7 @@ public:
 
   virtual void dump(ostream &) const;
   virtual void dumpz3(SexpPrinter &) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
 
   virtual bool has_aa_term(Design *des, NetScope *scope) const;
@@ -371,7 +373,7 @@ public:
 
   virtual void dump(ostream &) const;
   virtual void dumpz3(SexpPrinter &) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
 
 private:
@@ -389,24 +391,22 @@ public:
   // Add another name to the string of hierarchy that is the
   // current identifier.
   void append_name(perm_string);
-  virtual PExpr *next_cycle_transform(SexpPrinter &, TypeEnv &env);
+  virtual PExpr *next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   virtual const perm_string get_name() const;
   PEIdent getBaseIdent() const { return PEIdent(get_name()); }
   virtual const perm_string get_full_name() const;
   virtual void dump(ostream &) const;
   virtual void dumpz3(SexpPrinter &) const;
   virtual void dumpEq(SexpPrinter &out, int val) const;
-  virtual SecType *typecheckName(SexpPrinter &printer, TypeEnv &,
-                                 bool isNext) const;
-  virtual SecType *typecheckIdx(SexpPrinter &, TypeEnv &) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheckName(TypeEnv &, bool isNext) const;
+  virtual SecType *typecheckIdx(TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
   virtual void collect_index_exprs(set<perm_string> &s, TypeEnv &);
   bool hasIndexExpr() const {
     return path_.back().index.begin() != path_.back().index.end();
   }
-  virtual BaseType *check_base_type(SexpPrinter &,
-                                    map<perm_string, BaseType *> &varsToBase);
+  virtual BaseType *check_base_type(map<perm_string, BaseType *> &varsToBase);
 
   virtual bool has_aa_term(Design *des, NetScope *scope) const;
 
@@ -531,7 +531,7 @@ public:
 
   virtual void dump(ostream &) const;
   virtual void dumpz3(SexpPrinter &) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
   virtual unsigned test_width(Design *des, NetScope *scope, unsigned min,
                               unsigned lval, ivl_variable_type_t &expr_type,
@@ -562,7 +562,7 @@ public:
 
   virtual void dump(ostream &) const;
   virtual void dumpz3(SexpPrinter &) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
   virtual unsigned test_width(Design *des, NetScope *scope, unsigned min,
                               unsigned lval, ivl_variable_type_t &expr_type,
@@ -600,7 +600,7 @@ public:
   string value() const;
   virtual void dump(ostream &) const;
   virtual void dumpz3(SexpPrinter &) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
 
   virtual unsigned test_width(Design *des, NetScope *scope, unsigned min,
@@ -624,7 +624,7 @@ public:
 
   virtual void dump(ostream &out) const;
   virtual void dumpz3(SexpPrinter &out) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
 
   virtual bool has_aa_term(Design *des, NetScope *scope) const;
@@ -660,7 +660,7 @@ public:
 
   virtual void dump(ostream &out) const;
   virtual void dumpz3(SexpPrinter &out) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
 
   virtual bool has_aa_term(Design *des, NetScope *scope) const;
@@ -804,7 +804,7 @@ public:
 
   virtual void dump(ostream &out) const;
   virtual void dumpz3(SexpPrinter &out) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
 
   virtual bool has_aa_term(Design *des, NetScope *scope) const;
@@ -851,7 +851,7 @@ public:
 
   virtual void dump(ostream &) const;
   virtual void dumpz3(SexpPrinter &) const;
-  virtual SecType *typecheck(SexpPrinter &, TypeEnv &) const;
+  virtual SecType *typecheck(TypeEnv &) const;
   virtual void collect_idens(set<perm_string> &s) const;
 
   virtual bool has_aa_term(Design *des, NetScope *scope) const;

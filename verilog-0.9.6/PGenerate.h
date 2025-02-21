@@ -24,6 +24,7 @@
 #include "PScope.h"
 #include "StringHeap.h"
 #include "pform_types.h"
+#include "sectypes.h"
 #include <list>
 #include <map>
 #include <set>
@@ -119,7 +120,7 @@ public:
   bool elaborate(Design *des, NetScope *container) const;
 
   void dump(ostream &out, unsigned indent) const;
-  void next_cycle_transform(SexpPrinter &, TypeEnv env);
+  void next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   void typecheck(SexpPrinter &, TypeEnv env,
                  map<perm_string, Module *> modules);
   void collectAssigned(TypeEnv &env) const;

@@ -42,8 +42,8 @@ void dumpZ3Func(SexpPrinter &printer, perm_string name, list<str_or_num> args) {
   printer.endList();
 }
 
-ConstType *ConstType::TOP = new ConstType(lex_strings.make("HIGH"));
-ConstType *ConstType::BOT = new ConstType(lex_strings.make("LOW"));
+ConstType *ConstType::TOP = new ConstType(lex_strings.make("HIGH"), true);
+ConstType *ConstType::BOT = new ConstType(lex_strings.make("LOW"), true);
 
 ConstType::ConstType(bool isExplicit) {
   name = lex_strings.make("LOW");
@@ -370,7 +370,7 @@ SecType *JoinType::simplify() {
       if (lsimpl->equals(rsimpl)) {
         return lsimpl;
       } else {
-        return new JoinType(lsimpl, rsimpl);
+        return new JoinType(lsimpl, rsimpl, _isExplicit);
       }
     }
   }
@@ -460,7 +460,7 @@ SecType *MeetType::simplify() {
       if (lsimpl->equals(rsimpl)) {
         return lsimpl;
       } else {
-        return new MeetType(lsimpl, rsimpl);
+        return new MeetType(lsimpl, rsimpl, _isExplicit);
       }
     }
   }

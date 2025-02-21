@@ -19,6 +19,7 @@
  *    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA
  */
 
+#include "basetypes.h"
 #include "HName.h"
 #include "LineInfo.h"
 #include "PScope.h"
@@ -26,6 +27,7 @@
 #include "named.h"
 #include "netlist.h"
 #include "pform_types.h"
+#include "sectypes.h"
 #include <list>
 #include <map>
 #include <utility>
@@ -157,7 +159,7 @@ public:
   void typecheck(SexpPrinter &printer, TypeEnv &env,
                  map<perm_string, Module *> modules, char *depfun,
                  char *latfile);
-  void next_cycle_transform(SexpPrinter &printer, TypeEnv &env);
+  void next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   void dumpExprDefs(SexpPrinter &, set<perm_string> exprs) const;
   void CollectDepExprs(SexpPrinter &, TypeEnv &env,
                        map<perm_string, Module *> modules) const;

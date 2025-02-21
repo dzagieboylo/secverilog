@@ -64,7 +64,7 @@ public:
   virtual void dump(ostream &out, unsigned ind) const;
   virtual void typecheck(SexpPrinter &printer, TypeEnv &env,
                          set<perm_string> &defAssgn) const;
-  virtual void next_cycle_transform(SexpPrinter &printer, TypeEnv &env) const;
+  virtual void next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const;
   virtual bool collect_dep_invariants(SexpPrinter &printer, TypeEnv &env,
                                       Predicate &pred);
   virtual void collectAssigned(set<perm_string> &s) const;
@@ -93,7 +93,7 @@ public:
   virtual NetProc *elaborate(Design *des, NetScope *scope) const;
   virtual void elaborate_scope(Design *des, NetScope *scope) const;
   virtual void elaborate_sig(Design *des, NetScope *scope) const;
-  virtual Statement *next_cycle_transform(SexpPrinter &printer, TypeEnv &env);
+  virtual Statement *next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   virtual bool collect_dep_invariants(SexpPrinter &printer, TypeEnv &env,
                                       Predicate &pred);
   virtual void collect_index_exprs(set<perm_string> &exprs, TypeEnv &);
@@ -148,7 +148,7 @@ public:
   explicit PAssign(PExpr *lval, PExpr *de, PExpr *ex);
   explicit PAssign(PExpr *lval, PExpr *cnt, PEventStatement *de, PExpr *ex);
   explicit PAssign(PExpr *lval, PExpr *ex, bool is_constant);
-  virtual Statement *next_cycle_transform(SexpPrinter &printer, TypeEnv &env);
+  virtual Statement *next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   ~PAssign();
 
   virtual void dump(ostream &out, unsigned ind) const;
@@ -166,7 +166,7 @@ public:
   explicit PAssignNB(PExpr *lval, PExpr *ex);
   explicit PAssignNB(PExpr *lval, PExpr *de, PExpr *ex);
   explicit PAssignNB(PExpr *lval, PExpr *cnt, PEventStatement *de, PExpr *ex);
-  virtual Statement *next_cycle_transform(SexpPrinter &printer, TypeEnv &env);
+  virtual Statement *next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   ~PAssignNB();
 
   virtual void dump(ostream &out, unsigned ind) const;
@@ -209,7 +209,7 @@ public:
   virtual NetProc *elaborate(Design *des, NetScope *scope) const;
   virtual void elaborate_scope(Design *des, NetScope *scope) const;
   virtual void elaborate_sig(Design *des, NetScope *scope) const;
-  virtual Statement *next_cycle_transform(SexpPrinter &printer, TypeEnv &env);
+  virtual Statement *next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   virtual bool collect_dep_invariants(SexpPrinter &out, TypeEnv &env,
                                       Predicate &pred);
   virtual void collect_index_exprs(set<perm_string> &exprs, TypeEnv &);
@@ -307,7 +307,7 @@ public:
   virtual void dump(ostream &out, unsigned ind) const;
   virtual void typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
                          set<perm_string> &defAssgn) const;
-  virtual Statement *next_cycle_transform(SexpPrinter &printer, TypeEnv &env);
+  virtual Statement *next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   virtual bool collect_dep_invariants(SexpPrinter &out, TypeEnv &env,
                                       Predicate &pred);
   virtual void collectAssigned(set<perm_string> &s) const;
@@ -336,7 +336,7 @@ public:
                          set<perm_string> &defAssgn) const;
   virtual void collectAssigned(set<perm_string> &s) const;
 
-  virtual Statement *next_cycle_transform(SexpPrinter &printer, TypeEnv &env);
+  virtual Statement *next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   virtual bool collect_dep_invariants(SexpPrinter &out, TypeEnv &env,
                                       Predicate &pred);
   virtual void collect_index_exprs(set<perm_string> &exprs, TypeEnv &);
@@ -441,7 +441,7 @@ public:
   virtual NetProc *elaborate(Design *des, NetScope *scope) const;
   virtual void elaborate_scope(Design *des, NetScope *scope) const;
   virtual void elaborate_sig(Design *des, NetScope *scope) const;
-  virtual Statement *next_cycle_transform(SexpPrinter &printer, TypeEnv &env);
+  virtual Statement *next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   virtual bool collect_dep_invariants(SexpPrinter &out, TypeEnv &env,
                                       Predicate &pred);
   virtual void collectAssigned(set<perm_string> &s) const;
@@ -513,7 +513,7 @@ public:
   virtual void dump(ostream &out, unsigned ind) const;
   virtual void typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
                          set<perm_string> &defAssgn) const;
-  virtual Statement *next_cycle_transform(SexpPrinter &printer, TypeEnv &env);
+  virtual Statement *next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   virtual bool collect_dep_invariants(SexpPrinter &out, TypeEnv &env,
                                       Predicate &pred);
   virtual void collectAssigned(set<perm_string> &s) const;

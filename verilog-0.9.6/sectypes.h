@@ -76,13 +76,13 @@ class SecType {
 
   // Manipulate the types.
 public:
-
+  virtual ~SecType() {}
   virtual void dump(SexpPrinter &printer) {}
   virtual bool hasBottom() { return false; }
   virtual bool isBottom() { return false; }
   virtual bool hasTop() { return false; }
   virtual bool isTop() { return false; }
-  virtual SecType *simplify() { return this; }
+  virtual SecType *simplify() { _isExplicit = true; return this; } //TODO hack to make sure that simplification prevents further inference, remove later
   virtual SecType *subst(perm_string e1, const str_or_num &e2) { return this; }
   virtual SecType *subst(const map<perm_string, str_or_num> &m) { return this; }
   virtual bool equals(SecType *st) { return false; }
@@ -110,8 +110,8 @@ protected:
 class ConstType : public SecType {
 
 public:
-  ConstType(bool isExplicit = false);
-  ConstType(perm_string name, bool isExplicit = false);
+  ConstType(bool isExplicit = true);
+  ConstType(perm_string name, bool isExplicit = true);
   ~ConstType();
   void dump(SexpPrinter &printer) { printer << name.str(); }
   bool hasBottom() { return name == "LOW"; }
@@ -133,12 +133,20 @@ private:
 class VarType : public SecType {
 
 public:
-  VarType(perm_string varname, bool isExplicit = false);
+  VarType(perm_string varname, bool isExplicit = true);
   ~VarType();
   VarType &operator=(const VarType &);
 
 public:
   // Manipulate the types.
+  virtual void dump(SexpPrinter &printer) {
+    //SexpPrinter puts spaces between its arguments, so have to construct a single name string
+    stringstream ss;
+    ss << "lbl_";
+    ss << varname_.str();
+    auto name = ss.str(); 
+    printer << name;
+  }
   void set_type(perm_string varname);
   perm_string get_type() const;
   bool equals(SecType *st);
@@ -153,7 +161,7 @@ private:
 class IndexType : public SecType {
 
 public:
-  IndexType(perm_string name, const list<str_or_num> &exprs, bool isExplicit = false);
+  IndexType(perm_string name, const list<str_or_num> &exprs, bool isExplicit = true);
   ~IndexType();
   IndexType &operator=(const IndexType &);
   void dump(SexpPrinter &printer) { dumpZ3Func(printer, name_, exprs_); }
@@ -195,7 +203,7 @@ private:
 class JoinType : public SecType {
 
 public:
-  JoinType(SecType *, SecType *, bool isExplicit = false);
+  JoinType(SecType *, SecType *, bool isExplicit = true);
   ~JoinType();
   JoinType &operator=(const JoinType &);
   void dump(SexpPrinter &printer) {
@@ -231,7 +239,7 @@ private:
 class MeetType : public SecType {
 
 public:
-  MeetType(SecType *, SecType *, bool isExplicit = false);
+  MeetType(SecType *, SecType *, bool isExplicit = true);
   ~MeetType();
   MeetType &operator=(const MeetType &);
   void dump(SexpPrinter &printer) {
@@ -267,8 +275,8 @@ private:
 class QuantType : public SecType {
 
 public:
-  QuantType(perm_string index_var, SecType *st, bool isExplicit = false);
-  ~QuantType();
+  QuantType(perm_string index_var, SecType *st, bool isExplicit = true);
+  ~QuantType() {}
 
   void collect_dep_expr(set<perm_string> &m);
   virtual SecType *next_cycle(TypeEnv &env);
@@ -334,8 +342,8 @@ class PolicyType : public SecType {
 public:
   PolicyType(SecType *lower, perm_string cond_name,
              const list<str_or_num> &static_exprs,
-             const list<str_or_num> &dynamic_exprs, SecType *upper, bool isExplicit = false);
-  ~PolicyType();
+             const list<str_or_num> &dynamic_exprs, SecType *upper, bool isExplicit = true);
+  ~PolicyType() {}
   virtual SecType *next_cycle(TypeEnv &env);
   virtual bool hasExpr(perm_string str);
   virtual SecType *subst(perm_string e1, const str_or_num &e2);
@@ -455,13 +463,14 @@ struct AssignmentPath {
 };
 
 using PathAnalysis = std::map<PEIdent, std::vector<AssignmentPath>>;
+using BaseTypeMap = std::map<perm_string, BaseType *>;
+using SecTypeMap = std::map<perm_string, SecType *>;
 
 struct TypeEnv {
-  map<perm_string, SecType *> varsToType;
-  map<perm_string, BaseType *> varsToBase;
+  SecTypeMap varsToType;
+  BaseTypeMap varsToBase;
   SecType *pc;
-  set<perm_string>
-      dep_exprs; // a list of expressions where a dependent type may depend on
+  set<perm_string> dep_exprs; // a list of expressions where a dependent type may depend on
   map<perm_string, list<int>> genVarVals;
   PathAnalysis analysis;
   map<PProcess *, set<perm_string>> defAssigned;

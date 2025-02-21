@@ -510,8 +510,7 @@ sec_label
     } 
   | // don't set a default during parsing
     { 
-	  SecType* type = new ConstType(false);
-      $$ = type;
+      $$ = NULL;
     } 
     ;
     
@@ -564,10 +563,9 @@ sec_label_comp
   {
     $$ = $2;
   }
-  | // use default label Low
+  | // use default label empty, will be replaced with a label variable
     { 
-      SecType* type = new ConstType(false);
-      $$ = type;
+      $$ = NULL;
     } 
   ;
 
@@ -647,7 +645,6 @@ block_item_decl
 			dtype = IVL_VT_LOGIC;
           SecType*st = $6;
           BaseType*bt = $5;
-          assert(st);
           list<perm_string>* nexted_names = nextify_perm_strings($7);
 		  pform_set_net_range_type($7, 0, $4, dtype, st, bt);
           // Generate extra declaration for the nextified signal.
@@ -666,7 +663,6 @@ block_item_decl
 		{
           SecType*st = $4;
           BaseType*bt = $3;
-          assert(st);
           pform_set_reg_integer_type($5, st, bt);
 		  if ($1) delete $1;
 		}
@@ -675,7 +671,7 @@ block_item_decl
 		{   
             SecType*st = $4;
             BaseType*bt = $3;
-            assert(st);
+            
             pform_set_reg_time_type($5, st, bt);
 		}
 
@@ -2168,7 +2164,7 @@ port_declaration
 	port_declaration_context.port_net_type = $3;
     SecType*st = $7;
     BaseType*bt = $6;
-    assert(st);
+    
     port_declaration_context.sectype = st;
     port_declaration_context.basetype = bt;
 	port_declaration_context.sign_flag = $4;
@@ -2317,7 +2313,7 @@ module_item
 			dtype = IVL_VT_LOGIC;
           SecType*st = $8;
           BaseType*bt = $7;
-          assert(st);
+          
           list<perm_string>* nexted_list = nextify_perm_strings($9);
 		  pform_makewire(@2, $5, $4, $9, $2,
 				 NetNet::NOT_A_PORT, dtype, st, bt, $1);
@@ -2346,7 +2342,7 @@ module_item
 			dtype = IVL_VT_LOGIC;
           SecType*st = $8;
           BaseType*bt = $7;
-          assert(st);
+          
           list<perm_string>* nexted_list = nextify_net_decl_names($9);
 		  pform_makewire(@2, $5, $4, $6,
 				 str_strength, $9, $2, dtype, st, bt);
@@ -2375,7 +2371,7 @@ module_item
 			dtype = IVL_VT_LOGIC;
           SecType*st = $7;
           BaseType*bt = $6;
-          assert(st);
+          
           list<perm_string>* nexted_list = nextify_net_decl_names($8);
 		  pform_makewire(@2, 0, $4, 0, $5, $8, $2, dtype, st, bt);
           if(bt->isSeqType()){
@@ -2402,7 +2398,7 @@ module_item
         {
             SecType*st = $6;
             BaseType*bt = $5;
-            assert(st);
+            
             //we need a copy since pform_set_port_type will trash $3
             svector<PExpr*> *range;
             if ($3) { range = new svector<PExpr*>(*$3); }
@@ -2423,7 +2419,7 @@ module_item
 		{
             SecType*st = $6;
             BaseType*bt = $5;
-            assert(st);
+            
             list<perm_string>* nexted_names = nextify_perm_strings($7);
             pform_makewire(@1, $4, $3, $7, $2, $1, IVL_VT_NO_TYPE, st, bt, 0,
 		                 SR_BOTH);
@@ -2438,7 +2434,7 @@ module_item
 		{ 
           SecType*st = $6;
           BaseType*bt = $5;
-          assert(st);
+          
           list<pair<perm_string,PExpr*> >::const_iterator pp;
 		  list<perm_string>*tmp = new list<perm_string>;
 		  for (pp = $7->begin(); pp != $7->end(); pp++) {
@@ -2468,7 +2464,7 @@ module_item
 		{ 
           SecType*st = $6;
           BaseType*bt = $5;
-          assert(st);
+          
           list<perm_string>* nexted_names = nextify_perm_strings($7);
           pform_makewire(@1, $4, $3, $7, $2, NetNet::PINPUT,
 				 IVL_VT_NO_TYPE, st, bt, 0);
@@ -2484,7 +2480,7 @@ module_item
 		{
           SecType*st = $6;
           BaseType*bt = $5;
-          assert(st);
+          
           pform_makewire(@1, $4, $3, $7, $2, NetNet::PINOUT,
 				 IVL_VT_NO_TYPE, st, bt, 0);
           list<perm_string>* nexted_names = nextify_perm_strings($7);
@@ -4818,7 +4814,7 @@ udp_port_decl
       { perm_string pname = lex_strings.make($4);
     SecType*st = $3;
     BaseType*bt = $2;
-    assert(st);
+    
 	PWire*pp = new PWire(pname, NetNet::IMPLICIT, NetNet::POUTPUT, st, bt, IVL_VT_LOGIC);
 	svector<PWire*>*tmp = new svector<PWire*>(1);
 	(*tmp)[0] = pp;
@@ -4829,7 +4825,7 @@ udp_port_decl
       { perm_string pname = lex_strings.make($4);
     SecType*st = $3;
     BaseType*bt = $2;
-    assert(st);
+    
 	PWire*pp = new PWire(pname, NetNet::REG, NetNet::PIMPLICIT, st, bt, IVL_VT_LOGIC);
 	svector<PWire*>*tmp = new svector<PWire*>(1);
 	(*tmp)[0] = pp;
@@ -4840,7 +4836,7 @@ udp_port_decl
       { perm_string pname = lex_strings.make($5);
     SecType*st = $4;
     BaseType*bt = $3;
-    assert(st);
+    
 	PWire*pp = new PWire(pname, NetNet::REG, NetNet::POUTPUT, st, bt, IVL_VT_LOGIC);
 	svector<PWire*>*tmp = new svector<PWire*>(1);
 	(*tmp)[0] = pp;

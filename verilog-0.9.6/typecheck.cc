@@ -146,7 +146,7 @@ void LexicalScope::typecheck_localparams_(SexpPrinter &printer,
 // Next Cycle Transformation
 //-----------------------------------------------------------------------------
 
-void Module::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
+void Module::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
   // This transformation moves all assignments to sequential logic into
   // assignments to next-cycle objects.
   for (list<PProcess *>::const_iterator behav = behaviors.begin();
@@ -154,7 +154,7 @@ void Module::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
     if (debug_typecheck) {
       cerr << "NextCycleTransform:: " << typeid(*behav).name() << endl;
     }
-    (*behav)->next_cycle_transform(printer, env);
+    (*behav)->next_cycle_transform(baseTypes, secTypes);
   }
   /*
    * This is deleted since we don't really need to transform
@@ -172,7 +172,7 @@ void Module::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
   typedef list<PGenerate *>::const_iterator genscheme_iter_t;
   for (genscheme_iter_t cur = generate_schemes.begin();
        cur != generate_schemes.end(); cur++) {
-    (*cur)->next_cycle_transform(printer, env);
+    (*cur)->next_cycle_transform(baseTypes, secTypes);
   }
 }
 
@@ -189,12 +189,12 @@ PProcess *Module::gen_assign_next_block(perm_string id) {
   return ret;
 }
 
-void PProcess::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) const {
+void PProcess::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
   if (statement_ == NULL)
     return;
   if (debug_typecheck)
     cerr << "NextCycleTransform:: " << typeid(*statement_).name() << endl;
-  statement_->next_cycle_transform(printer, env);
+  statement_->next_cycle_transform(baseTypes, secTypes);
 }
 
 bool PProcess::collect_dep_invariants(SexpPrinter &printer, TypeEnv &env,
@@ -222,7 +222,7 @@ void PProcess::collect_index_exprs(set<perm_string> &exprs, TypeEnv &env) {
   statement_->collect_index_exprs(exprs, env);
 }
 
-Statement *Statement::next_cycle_transform(SexpPrinter &, TypeEnv &env) {
+Statement *Statement::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
   return this;
 }
 
@@ -235,9 +235,8 @@ void Statement::collect_index_exprs(set<perm_string> &exprs, TypeEnv &env) {
   return;
 }
 
-Statement *PEventStatement::next_cycle_transform(SexpPrinter &printer,
-                                                 TypeEnv &env) {
-  statement_ = statement_->next_cycle_transform(printer, env);
+Statement *PEventStatement::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
+  statement_ = statement_->next_cycle_transform(baseTypes, secTypes);
   return this;
 }
 
@@ -255,11 +254,11 @@ bool PEventStatement::collect_dep_invariants(SexpPrinter &printer, TypeEnv &env,
   return statement_->collect_dep_invariants(printer, env, pred);
 }
 
-Statement *PBlock::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
+Statement *PBlock::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
   for (uint i = 0; i < list_.count(); i++) {
     if (debug_typecheck)
       cerr << "NextCycleTransform:: " << typeid(*list_[i]).name() << endl;
-    list_[i] = list_[i]->next_cycle_transform(printer, env);
+    list_[i] = list_[i]->next_cycle_transform(baseTypes, secTypes);
   }
   return this;
 }
@@ -283,11 +282,11 @@ bool PBlock::collect_dep_invariants(SexpPrinter &printer, TypeEnv &env,
   return result;
 }
 
-Statement *PCondit::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
+Statement *PCondit::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
   if (if_ != NULL)
-    if_ = if_->next_cycle_transform(printer, env);
+    if_ = if_->next_cycle_transform(baseTypes, secTypes);
   if (else_ != NULL)
-    else_ = else_->next_cycle_transform(printer, env);
+    else_ = else_->next_cycle_transform(baseTypes, secTypes);
   return this;
 }
 
@@ -347,13 +346,13 @@ bool PCAssign::collect_dep_invariants(SexpPrinter &, TypeEnv &env,
 
 // This is the only rule where something actually happens. Only the left
 // hand-side of the assignment is transformed.
-Statement *PAssignNB::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
+Statement *PAssignNB::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
   if (debug_typecheck)
     cerr << "Nextify " << *lval_ << endl;
   assert(lval_);
   auto ident = dynamic_cast<PEIdent *>(lval_);
   BaseType* expected = new SeqType(true);//must be set to explicit  
-  bool success = infer_baseType(env, ident, expected);
+  bool success = infer_baseType(baseTypes, ident, expected);
   if (!success) {
     auto msg = new std::string("tried to use assign statement on seq var: ");
     *msg += ident->get_name().str();
@@ -362,14 +361,14 @@ Statement *PAssignNB::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
     throw std::runtime_error(*msg);
   }
 
-  lval_ = lval_->next_cycle_transform(printer, env);
+  lval_ = lval_->next_cycle_transform(baseTypes, secTypes);
   return this;
 }
 
-Statement *PAssign::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
+Statement *PAssign::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
   auto ident = dynamic_cast<PEIdent *>(lval_);
   BaseType* expected = new ComType(true);//must be set to explicit
-  bool success = infer_baseType(env, ident, expected);
+  bool success = infer_baseType(baseTypes, ident, expected);
   if (!success) {
     auto msg = new std::string("tried to use blocking assign on seq var: ");
     *msg += ident->get_name().str();
@@ -397,7 +396,7 @@ bool PAssign_::collect_dep_invariants(SexpPrinter &printer, TypeEnv &env,
   }
   // make sure basetype implies lhs has only 1 value per cycle (i.e. not a com
   // reg)
-  BaseType *bt  = lval()->check_base_type(printer, env.varsToBase);
+  BaseType *bt  = lval()->check_base_type(env.varsToBase);
   bool isOkType = bt->isNextType(); // TODO check if declared as Wire
   // if lhs appears in dependent type and is correct basetype
   if (isOkType &&
@@ -426,7 +425,7 @@ bool PAssign_::collect_dep_invariants(SexpPrinter &printer, TypeEnv &env,
     rval()->collect_idens(env.dep_exprs);
     return true;
   } else {
-    SecType *ltyp = lval()->typecheck(printer, env);
+    SecType *ltyp = lval()->typecheck(env);
     bool isRecDep = ltyp->isDepType() && ltyp->hasExpr(lval()->get_name());
     // cerr << lval()->get_name() << " is recdep " << isRecDep << endl;
     if (isRecDep) {
@@ -440,16 +439,16 @@ bool PAssign_::collect_dep_invariants(SexpPrinter &printer, TypeEnv &env,
   }
 }
 
-Statement *PCAssign::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
-  lval_ = lval_->next_cycle_transform(printer, env);
+Statement *PCAssign::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
+  lval_ = lval_->next_cycle_transform(baseTypes, secTypes);
   return this;
 }
 
-PExpr *PExpr::next_cycle_transform(SexpPrinter &, TypeEnv &env) { return this; }
+PExpr *PExpr::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes)  { return this; }
 
-PExpr *PEIdent::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
+PExpr *PEIdent::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes)  {
 
-  BaseType *bt = check_base_type(printer, env.varsToBase);
+  BaseType *bt = check_base_type(baseTypes);
   if (bt == NULL) {
     cerr << "WARN: null basetype: " << peek_tail_name(path()).str() << endl;
   }
@@ -472,8 +471,8 @@ PExpr *PEIdent::next_cycle_transform(SexpPrinter &printer, TypeEnv &env) {
       cerr << "Nextify " << path() << " to " << newPath << endl;
     }
     auto result = new PEIdent(newPath);
-    env.varsToBase[result->get_name()] = new NextType(true);
-    env.varsToType[result->get_name()] = env.varsToType[get_name()];
+    baseTypes[result->get_name()] = new NextType(true);
+    secTypes[result->get_name()] = secTypes[get_name()];
     return result;
   }
   return this;
@@ -498,12 +497,12 @@ PEIdent *PEIdent::get_this_cycle_name() {
   return new PEIdent(newPath);
 }
 
-void PGenerate::next_cycle_transform(SexpPrinter &printer, TypeEnv env) {
+void PGenerate::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
   for (list<PProcess *>::const_iterator behav = behaviors.begin();
        behav != behaviors.end(); behav++) {
     if (debug_typecheck)
       cerr << "NextCycleTransform:: " << typeid(**behav).name() << endl;
-    (*behav)->next_cycle_transform(printer, env);
+    (*behav)->next_cycle_transform(baseTypes, secTypes);
   }
 }
 
@@ -543,8 +542,7 @@ void LexicalScope::typecheck_wires_(SexpPrinter &printer, TypeEnv &env) const {
   // Iterate through and display all the wires.
   for (map<perm_string, PWire *>::const_iterator wire = wires.begin();
        wire != wires.end(); wire++) {
-    (*wire).second->typecheck(printer, env.varsToType, env.varsToBase,
-                              env.seqVars);
+    (*wire).second->typecheck(printer, env.varsToType, env.varsToBase, env.seqVars);
   }
 }
 
@@ -617,9 +615,9 @@ void PWire::typecheck(SexpPrinter &printer,
   varsToType[basename()] = sectype_;
   varsToBase[basename()] = basetype_;
   if (sectype_ == NULL) {
-    cerr << "WARN: Found NULL sectype for " << basename().str() << ", using BOT"
-         << endl;
-    varsToType[basename()] = ConstType::BOT;
+    cerr << "WARN: Found NULL sectype for " << basename().str() << ", will attempt to infer" << endl;
+    auto tmp = new VarType(basename());
+    varsToType[basename()] = tmp;
   }
   if (debug_typecheck) {
     cerr << "updating typeEnv for " << basename();
@@ -1012,17 +1010,8 @@ void Module::typecheck(SexpPrinter &printer, TypeEnv &env,
 
   typecheck_events_(printer, env);
 
-  // Iterate through and display all the wires (including registers).
-  if (debug_typecheck)
-    cerr << "typechecking wires" << endl;
-  typecheck_wires_(printer, env);
-
   auto analysis = get_paths(*this, env);
   env.analysis  = analysis;
-
-  if (debug_typecheck)
-    cerr << "next-cycle transform" << endl;
-  next_cycle_transform(printer, env);
 
   if (debug_typecheck)
     cerr << "collecting dependands" << endl;
@@ -1282,21 +1271,21 @@ void typecheck_assignment(SexpPrinter &printer, PExpr *lhs, PExpr *rhs,
     SecType *ltype, *rtype, *ltype_orig;
     BaseType *lbase;
     PEIdent *lident = dynamic_cast<PEIdent *>(lhs);
-    lbase           = lhs->check_base_type(printer, env.varsToBase);
+    lbase           = lhs->check_base_type(env.varsToBase);
     if (lident != NULL) {
       // if lhs is v[x], only want to put type(v) in the type
-      ltype_orig = lident->typecheckName(printer, env, false);
+      ltype_orig = lident->typecheckName(env, false);
       // want next cycle version if is NextType
-      ltype = lident->typecheckName(printer, env, lbase->isNextType());
+      ltype = lident->typecheckName(env, lbase->isNextType());
     } else {
       auto msg = new std::string("Assigned to non identifier on LHS: ");
       *msg += lhs->get_name().str();
       throw std::runtime_error(*msg);
     }
 
-    rtype = new JoinType(rhs->typecheck(printer, env), env.pc);
+    rtype = new JoinType(rhs->typecheck(env), env.pc);
     // if lhs is v[x], want to include type(x) in the rhs type
-    rtype = new JoinType(rtype, lident->typecheckIdx(printer, env));
+    rtype = new JoinType(rtype, lident->typecheckIdx(env));
     // if lhs is NOT a quant type and this is an indexed expression
     // (i.e., we are only assigning to part of the variable)
     // then add ltype_orig into rtype
@@ -1424,7 +1413,7 @@ void PGAssign::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate pred,
 
   auto ident = dynamic_cast<PEIdent *>(pin(0));
   BaseType* expected = new ComType(true);
-  bool success = infer_baseType(env, ident, expected);
+  bool success = infer_baseType(env.varsToBase, ident, expected);
   if (!success) {
     auto msg = new std::string("tried to use blocking assign on seq var: ");
     *msg += ident->get_name().str();
@@ -1533,7 +1522,7 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
           PWire *port               = (*ite).second;
           NetNet::PortType porttype = port->get_port_type();
 
-          SecType *paramType = param->typecheck(printer, env);
+          SecType *paramType = param->typecheck(env);
           SecType *pinType   = port->get_sec_type();
           for (std::map<perm_string, perm_string>::iterator substiter =
                    pinSubst.begin();
@@ -1651,7 +1640,7 @@ void PAssign::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
 
   auto ident = dynamic_cast<PEIdent *>(lval_);
   BaseType* expected = new ComType(true);//must be set to explicit
-  bool success = infer_baseType(env, ident, expected);
+  bool success = infer_baseType(env.varsToBase, ident, expected);
   if (!success) {
     auto msg = new std::string("tried to use nonblocking assign on nonseq var: ");
     *msg += ident->get_name().str();
@@ -1687,7 +1676,7 @@ void PAssignNB::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
 
   auto ident = dynamic_cast<PEIdent *>(lval_);
   BaseType* expected = new NextType(true);//must be set to explicit
-  bool success = infer_baseType(env, ident, expected);
+  bool success = infer_baseType(env.varsToBase, ident, expected);
   if (!success) {
     auto msg = new std::string("tried to use nonblocking assign on nonseq var: ");
     *msg += ident->get_name().str();
@@ -1792,7 +1781,7 @@ void PCase::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
     PCase::Item *cur = (*items_)[idx];
     bool need_hypo =
         env.dep_exprs.find(expr_->get_name()) != env.dep_exprs.end();
-    env.pc = new JoinType(expr_->typecheck(printer, env), oldpc);
+    env.pc = new JoinType(expr_->typecheck(env), oldpc);
     env.pc = env.pc->simplify();
 
     if (need_hypo) {
@@ -1835,7 +1824,7 @@ void PCondit::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
 
   // generate fresh variables for that used in the current pc
   SecType *etype =
-      expr_->typecheck(printer, env); //->freshVars(get_lineno(), subst);
+      expr_->typecheck(env); //->freshVars(get_lineno(), subst);
   env.pc = new JoinType(etype, oldpc);
   env.pc = env.pc->simplify();
 
@@ -1941,10 +1930,10 @@ void PEventStatement::typecheck(SexpPrinter &printer, TypeEnv &env,
   SecType *oldpc = env.pc;
   // taint pc by the label of trigger event
   if (expr_.count() != 0) {
-    env.pc = new JoinType(env.pc, expr_[0]->expr()->typecheck(printer, env));
+    env.pc = new JoinType(env.pc, expr_[0]->expr()->typecheck(env));
     for (unsigned idx = 1; idx < expr_.count(); idx += 1)
       env.pc =
-          new JoinType(env.pc, expr_[idx]->expr()->typecheck(printer, env));
+          new JoinType(env.pc, expr_[idx]->expr()->typecheck(env));
   }
   if (debug_typecheck) {
     cerr << "New PC is: " << *env.pc << endl;
@@ -1975,14 +1964,13 @@ void PForever::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
   throw "PForever";
 }
 
-Statement *PForStatement::next_cycle_transform(SexpPrinter &printer,
-                                               TypeEnv &env) {
+Statement *PForStatement::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
   // only transform body
   if (debug_typecheck) {
     cerr << "PForStatement::next_cycle_transform" << endl;
   }
   if (statement_) {
-    statement_ = statement_->next_cycle_transform(printer, env);
+    statement_ = statement_->next_cycle_transform(baseTypes, secTypes);
   }
   return this;
 }
@@ -2034,7 +2022,7 @@ void PForStatement::typecheck(SexpPrinter &printer, TypeEnv &env,
                        get_lineno(), note.str(), true, defAssgn);
 
   SecType *oldpc    = env.pc;
-  SecType *condType = cond_->typecheck(printer, env);
+  SecType *condType = cond_->typecheck(env);
   env.pc            = new JoinType(condType, oldpc);
   env.pc            = env.pc->simplify();
 
@@ -2257,6 +2245,34 @@ void output_type_families(SexpPrinter &printer, char *depfun) {
   }
 }
 
+void collectBaseTypes(map<perm_string, Module *> modules, map<perm_string, BaseTypeMap*>&basetypes) {
+  for (auto m : modules) {
+    auto name = m.first;
+    basetypes[name] = new BaseTypeMap();
+    for (auto w : m.second->wires) {
+      auto wirename = w.second->basename();
+      (*basetypes[name])[wirename] = w.second->get_base_type();
+    }
+  }
+}
+
+void collectSecTypes(map<perm_string, Module *> modules, map<perm_string, SecTypeMap*>&sectypes) {
+  for (auto m : modules) {
+    auto name = m.first;
+    sectypes[name] = new SecTypeMap();
+    for (auto w : m.second->wires) {
+      auto wirename = w.second->basename();
+      auto sectype = w.second->get_sec_type();
+      if (sectype == NULL) {
+        cerr << "WARN: Found NULL sectype for " << wirename.str() << ", will attempt to infer" << endl;
+        auto tmp = new VarType(wirename);
+        w.second->set_sec_type(tmp);
+      }
+      (*sectypes[name])[wirename] = w.second->get_sec_type();
+    }
+  }
+}
+
 /*
  * This function is the root of all type checking. The input is the list
  * of root module names. The function locates the Module definitions
@@ -2264,24 +2280,34 @@ void output_type_families(SexpPrinter &printer, char *depfun) {
  */
 void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
                char *depfun_file_name) {
-  // Scan the root modules by name, and output the name.
-  for (map<perm_string, Module *>::const_iterator mod = modules.begin();
-       mod != modules.end(); mod++) {
+  
+  map<perm_string, BaseTypeMap*> module_base_types;
+  map<perm_string, SecTypeMap*> module_sec_types;
+  collectBaseTypes(modules, module_base_types); //gather explicit base types
+  collectSecTypes(modules, module_sec_types); //gather explicit and missing security types
+  for (auto entry : modules) {
+    //update next-cycle names and check seq/com type compliance
+    entry.second->next_cycle_transform(*module_base_types[entry.first], *module_sec_types[entry.first]);
+  }
 
-    // Get the module definition for this root instance.
-    Module *rmod = (*mod).second;
+  //Collect type constraints for each module
+  map<perm_string, set<Constraint*>*> consts;
+  collect_type_constraints(modules, module_base_types, module_sec_types, consts);
+  for (auto entry : modules) {
 
-    // Typing environment \G and assumptions \A for type
-    // checking typing rules have the form \G, \A |- C, where
-    // \G is a map from Verilog vars to security lables, and
-    // \A is a conjunction of predicates on PWire
-    map<perm_string, SecType *> *varsToType = new map<perm_string, SecType *>();
-    map<perm_string, BaseType *> *varsToBase =
-        new map<perm_string, BaseType *>();
-    TypeEnv *env = new TypeEnv(*varsToType, *varsToBase, ConstType::BOT, rmod);
-
+ 
+    auto name = entry.first;
+    Module *rmod = entry.second;
+    TypeEnv *env = new TypeEnv(*module_sec_types[entry.first], *module_base_types[entry.first], ConstType::BOT, rmod);
+    
+    //DEBUG
+    SexpPrinter tmp(cerr, 80);
+    set<perm_string> empty;
+    for (auto c : *consts[name]) {
+        dump_constraint(tmp, *c, empty, *env);
+    }
     ofstream z3file;
-    string z3filename = string(rmod->file_name().str());
+    string z3filename = string(name.str());
     size_t pos        = z3filename.find_first_of('.');
     if (pos != string::npos) {
       z3filename = z3filename.substr(0, pos);

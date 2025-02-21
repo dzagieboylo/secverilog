@@ -1,8 +1,12 @@
 #ifndef __basetypes_H
 #define __basetypes_H
 
+#include <map>
+#include "StringHeap.h"
+
 class BaseType {
 public:
+  virtual ~BaseType() {}
   virtual const char *name() { return "BaseType"; }
   virtual bool isSeqType() { return false; }
   virtual bool isNextType() { return false; }
@@ -29,5 +33,7 @@ public:
   virtual const char *name() { return "NextType"; }
   virtual bool isNextType() { return true; }
 };
+
+using BaseTypeMap = std::map<perm_string, BaseType *>;
 
 #endif

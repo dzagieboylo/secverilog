@@ -43,6 +43,12 @@ named_pexpr_t *nextify_named_pexpr(named_pexpr_t *n) {
   return ret;
 }
 
+perm_string prepend_perm_string(perm_string prefix, perm_string s) {
+  std::string name = s.str();
+  std::string p_name = prefix.str();
+  return lex_strings.make((p_name + "_" + name).c_str());
+}
+
 perm_string nextify_perm_string(perm_string s) {
   std::string name = s.str();
   return lex_strings.make((name + "_next_").c_str());
