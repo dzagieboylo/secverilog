@@ -938,7 +938,7 @@ void checkUnassignedPaths(SexpPrinter &printer, TypeEnv &env, Module &m) {
               sectype->next_cycle(env.varsToBase, env.varsToType)->apply_index(idx));
 
           Predicate empty;
-          Constraint c(next_sectype, applied, env.invariants, &empty);
+          Constraint c(next_sectype, applied, &empty);
           set<perm_string> empty_genvars;
           dump_constraint(printer, c, empty_genvars, env);
 
@@ -952,7 +952,7 @@ void checkUnassignedPaths(SexpPrinter &printer, TypeEnv &env, Module &m) {
                        [&]() { dump_isnt_assigned_normal(printer, v, env); });
         auto next_sectype = sectype->next_cycle(env.varsToBase, env.varsToType);
         Predicate empty;
-        Constraint c(next_sectype, sectype, env.invariants, &empty);
+        Constraint c(next_sectype, sectype, &empty);
         set<perm_string> empty_genvars;
         dump_constraint(printer, c, empty_genvars, env);
         printer.singleton("check-sat");
@@ -1200,7 +1200,7 @@ void AContrib::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
 }
 
 /**
- * Generate constraints for an assignment
+ * Generate constraints for an assignment and save it in the environment
  * lhs <= rhs
  *
  * pred: A predication on hardware state that holds when the assignment
@@ -1217,22 +1217,10 @@ void typecheck_assignment_constraint(SexpPrinter &printer, SecType *lhs,
   collect_used_genvars(genvars, rhs, env);
   printer.lineBreak();
   printer.singleton("push");
-  Constraint c = Constraint(lhs, rhs, env.invariants, &pred);
-  dump_constraint(printer, c, genvars, env);
-  // this used to be if(checkDefAssign) which should generate a z3
-  // constraint for when the identifier checkDefAssign is NOT definitely
-  // assigned this should make the whole constraint unsat if the variable is
-  // definietly assigned on all paths
-  if (false) {
-    printer.startList("assert");
-    // TODO make the genvars get selected based on defAssign analysis
-    // for only this assertion
-    printer.startList("not");
-    dump_is_def_assign(printer, env.analysis, *checkDefAssign, env);
-    printer.endList();
-    printer.endList();
-  }
-
+  Predicate* p = new Predicate(pred);
+  Constraint* c = new Constraint(lhs, rhs, p);
+  env.typeConstraints.insert(c);
+  dump_constraint(printer, *c, genvars, env);
   printer.addComment(note);
   printer.startList("echo");
   printer << (string("\"") + note + "\"");
@@ -1295,9 +1283,9 @@ void typecheck_assignment(SexpPrinter &printer, PExpr *lhs, PExpr *rhs,
                                          // redundant, but just in case :)
       // declare a fresh variable to represent new value of lhs
       printer.singleton("push");
-      string tmpname(lhs->get_name());
-      tmpname.append(to_string(lineno));
-      perm_string newname = perm_string::literal(tmpname.c_str());
+      string* tmpname = new string(lhs->get_name());
+      tmpname->append(to_string(lineno));
+      perm_string newname = perm_string::literal(tmpname->c_str());
       printDecl(printer, newname.str());
       auto wire_ite = env.module->wires.find(lhs->get_name());
       if (wire_ite != env.module->wires.end()) {
@@ -1305,12 +1293,12 @@ void typecheck_assignment(SexpPrinter &printer, PExpr *lhs, PExpr *rhs,
         printBounds(printer, newname.str(), def);
       }
       // assume new value for rhs
-      Predicate newcond = precond;
-      newcond.hypotheses.insert(new Hypothesis(new PEIdent(newname), rhs));
+      Predicate* newcond = new Predicate(precond);
+      newcond->hypotheses.insert(new Hypothesis(new PEIdent(newname), rhs));
       // replace lhsname in ltype
       typecheck_assignment_constraint(printer,
                                       ltype->subst(lhs->get_name(), newname),
-                                      rtype, newcond, note, NULL, env);
+                                      rtype, *newcond, note, NULL, env);
       // NSU check if not definitely assigned:
       if (!defAssgns.contains(lhs->get_name())) {
         string newNote = note + "--No-sensitive-upgrade-check;";
@@ -1552,7 +1540,7 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
             SecType *rhs = paramType;
             SecType *lhs = pinType;
             Predicate pred;
-            Constraint c = Constraint(lhs, rhs, env.invariants, &pred);
+            Constraint c = Constraint(lhs, rhs, &pred);
             // TODO genvars properly
             std::set<perm_string> genvars;
             dump_constraint(printer, c, genvars, env);
@@ -1576,7 +1564,7 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
             SecType *rhs = pinType;
             SecType *lhs = paramType;
             Predicate pred;
-            Constraint c = Constraint(lhs, rhs, env.invariants, &pred);
+            Constraint c = Constraint(lhs, rhs, &pred);
             // TODO genvars properly
             std::set<perm_string> genvars;
             dump_constraint(printer, c, genvars, env);
@@ -2229,21 +2217,22 @@ void output_type_families(SexpPrinter &printer, char *depfun) {
   }
 }
 
-void collectBaseTypes(map<perm_string, Module *> modules, map<perm_string, BaseTypeMap*>&basetypes) {
+void collectBaseTypes(map<perm_string, Module *> modules, map<perm_string, BaseTypeMap>&basetypes) {
   for (auto m : modules) {
     auto name = m.first;
-    basetypes[name] = new BaseTypeMap();
+    BaseTypeMap curMap;
     for (auto w : m.second->wires) {
       auto wirename = w.second->basename();
-      (*basetypes[name])[wirename] = w.second->get_base_type();
+      curMap[wirename] = w.second->get_base_type();
     }
+    basetypes[name] = curMap;
   }
 }
 
-void collectSecTypes(map<perm_string, Module *> modules, map<perm_string, SecTypeMap*>&sectypes) {
+void collectSecTypes(map<perm_string, Module *> modules, map<perm_string, SecTypeMap>&sectypes) {
   for (auto m : modules) {
     auto name = m.first;
-    sectypes[name] = new SecTypeMap();
+    SecTypeMap curMap;
     for (auto w : m.second->wires) {
       auto wirename = w.second->basename();
       auto sectype = w.second->get_sec_type();
@@ -2252,8 +2241,9 @@ void collectSecTypes(map<perm_string, Module *> modules, map<perm_string, SecTyp
         auto tmp = new VarType(wirename);
         w.second->set_sec_type(tmp);
       }
-      (*sectypes[name])[wirename] = w.second->get_sec_type();
+      curMap[wirename] = w.second->get_sec_type();
     }
+    sectypes[name] = curMap;
   }
 }
 
@@ -2265,26 +2255,26 @@ void collectSecTypes(map<perm_string, Module *> modules, map<perm_string, SecTyp
 void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
                char *depfun_file_name) {
   
-  map<perm_string, BaseTypeMap*> module_base_types;
-  map<perm_string, SecTypeMap*> module_sec_types;
+  map<perm_string, BaseTypeMap> module_base_types;
+  map<perm_string, SecTypeMap> module_sec_types;
   collectBaseTypes(modules, module_base_types); //gather explicit base types
   collectSecTypes(modules, module_sec_types); //gather explicit and missing security types
   for (auto entry : modules) {
     auto name = entry.first;
     Module *rmod = entry.second;
-    TypeEnv *env = new TypeEnv(*module_sec_types[entry.first], *module_base_types[entry.first], ConstType::BOT, rmod);
-    //Do are path analysis before re-writing LHS
-    auto analysis = get_paths(*rmod, *env);
-    env->analysis = analysis;
+    TypeEnv env = TypeEnv(module_sec_types[entry.first], module_base_types[entry.first], ConstType::BOT, rmod);
+    //Do are path analysis before re-writing LHS w/ next-types
+    auto analysis = get_paths(*rmod, env);
+    env.analysis = analysis;
     //update next-cycle names and check seq/com type compliance
-    entry.second->next_cycle_transform(env->varsToBase, env->varsToType);
+    entry.second->next_cycle_transform(env.varsToBase, env.varsToType);
     //Add all of the SEQ vars
-    for (auto entr : env->varsToBase) {
+    for (auto entr : env.varsToBase) {
       if (entr.second->isSeqType()) {
         auto wiredef = rmod->wires_find(entr.first);
         //Don't insert input ports into this! even though they are seqvars we don't want them in here
         if (wiredef && (wiredef->get_port_type() == NetNet::NOT_A_PORT || wiredef->get_port_type() == NetNet::POUTPUT)) {
-          env->seqVars.insert(entr.first);
+          env.seqVars.insert(entr.first);
         }
       }
     }
@@ -2297,7 +2287,7 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     z3file.open((z3filename + ".z3").c_str());
     SexpPrinter printer(z3file, 80);
     try {
-      rmod->typecheck(printer, *env, modules, depfun_file_name,
+      rmod->typecheck(printer, env, modules, depfun_file_name,
                       lattice_file_name);
     } catch (char const *str) {
       cerr << "Unimplemented " << str << endl;
@@ -2305,5 +2295,12 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
       cerr << "Error with sexpifying: " << exn.what() << endl;
     }
     z3file.close();
+
+    SexpPrinter debug(cerr, 80);
+    set<perm_string> empty;
+    cerr << "Here are the type constraints for " << name << endl;
+    for (auto c : env.typeConstraints) {
+      dump_constraint(debug, *c, empty, env);
+    }
   }
 }

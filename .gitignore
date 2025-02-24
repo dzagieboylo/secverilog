@@ -5,6 +5,9 @@ bin/*
 .svn
 .git
 *~
+#*
+test/#*
+test/*~
 verilog-0.9.6/conf.done
 lib/
 include/

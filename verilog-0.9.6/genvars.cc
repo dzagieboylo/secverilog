@@ -5,6 +5,10 @@
 #include <iterator>
 #include <stdexcept>
 
+/*
+ * Add any genvars (which are used in generate blocks) that are used by
+ * the given predicate into the result set.
+ */
 void collect_used_genvars(std::set<perm_string> &res, const Predicate &pred,
                           TypeEnv &env) {
   for (auto h : pred.hypotheses) {
@@ -12,6 +16,10 @@ void collect_used_genvars(std::set<perm_string> &res, const Predicate &pred,
   }
 }
 
+/*
+ * Add any genvars (which are used in generate blocks) that are used by
+ * the given type into the result set.
+ */
 void collect_used_genvars(std::set<perm_string> &res, SecType *typ,
                           TypeEnv &env) {
   std::set<perm_string> depexp;

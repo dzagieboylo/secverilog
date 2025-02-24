@@ -746,7 +746,7 @@ TypeEnv &TypeEnv::operator=(const TypeEnv &e) {
 
 Predicate &Predicate::operator=(const Predicate &p) {
   Predicate *ret  = new Predicate();
-  ret->hypotheses = p.hypotheses;
+  ret->hypotheses = set<Hypothesis*>(p.hypotheses);
   return *ret;
 }
 
@@ -759,17 +759,6 @@ Predicate *Predicate::subst(map<perm_string, perm_string> m) const {
   return ret;
 }
 
-Equality *Equality::subst(const map<perm_string, str_or_num> &m) {
-  Equality *ret = new Equality(left->subst(m), right->subst(m), isleq);
-  return ret;
-}
-
-void Equality::dump(SexpPrinter &printer) const {
-  if (isleq)
-    printer << "leq" << *left << *right;
-  else
-    printer << "=" << *left << *right;
-}
 
 void dump_constraint(SexpPrinter &printer, Constraint &c,
                      std::set<perm_string> genvars, TypeEnv &env) {
@@ -777,22 +766,18 @@ void dump_constraint(SexpPrinter &printer, Constraint &c,
   printer.startList("assert");
 
   bool hashypo = c.pred != NULL && c.pred->hypotheses.size() != 0;
-  bool hasinv  = c.invariant != NULL && c.invariant->invariants.size() != 0;
 
-  if (hashypo || hasinv) {
+  if (hashypo) {
     printer.startList("and");
   }
   if (hashypo) {
     printer << (*c.pred);
   }
-  if (hasinv) {
-    printer << (*c.invariant);
-  }
 
   printer.startList("not");
   c.right->simplify()->emitFlowsTo(printer, c.left->simplify(), env.module);
   printer.endList();
-  if (hashypo || hasinv) {
+  if (hashypo) {
     printer.endList();
   }
 

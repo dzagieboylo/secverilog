@@ -44,6 +44,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <unordered_set>
 #include <variant>
 
 class SecType;
@@ -329,9 +330,8 @@ struct Hypothesis {
   PExpr *bexpr_;
 
   Hypothesis(PExpr *l, PExpr *r) { bexpr_ = new PEBComp('e', l, r); }
-
   Hypothesis(PExpr *bexpr) { bexpr_ = bexpr; }
-
+  Hypothesis(const Hypothesis &h) { bexpr_ = h.bexpr_;}
   Hypothesis *subst(map<perm_string, perm_string> m);
 
   bool matches(perm_string name);
@@ -436,31 +436,33 @@ struct Predicate {
   Predicate *subst(map<perm_string, perm_string> m) const;
   Predicate() : hypotheses() {}
   Predicate(const Predicate &p) : hypotheses(p.hypotheses) {}
-};
 
-struct Equality {
-  SecType *left;
-  SecType *right;
-  bool isleq;
-
-  Equality(SecType *l, SecType *r, bool leq = false) {
-    left  = l;
-    right = r;
-    isleq = leq;
+  bool operator==(const Predicate &other) {
+    return hypotheses == other.hypotheses;
   }
-
-  void dump(SexpPrinter &printerut) const;
-  Equality *subst(const map<perm_string, str_or_num> &m);
-};
-
-struct Invariant {
-  set<Equality *> invariants;
 };
 
 struct AssignmentPath {
   Predicate path;
   std::set<perm_string> genvars;
 };
+
+struct Constraint {
+  SecType *left;
+  SecType *right;
+  Predicate *pred;
+
+  Constraint(SecType *l, SecType *r,Predicate *p) {
+    left      = l;
+    right     = r;
+    pred      = p;
+  }
+
+  bool operator==(const Constraint other) {
+    return left->equals(other.left) && right->equals(other.right) && pred == other.pred;
+  }
+};
+
 
 using PathAnalysis = std::map<PEIdent, std::vector<AssignmentPath>>;
 using BaseTypeMap = std::map<perm_string, BaseType *>;
@@ -475,7 +477,7 @@ struct TypeEnv {
   PathAnalysis analysis;
   map<PProcess *, set<perm_string>> defAssigned;
   set<perm_string> seqVars;
-  Invariant *invariants;
+  unordered_set<Constraint*> typeConstraints;
   Module *module;
 
   TypeEnv(map<perm_string, SecType *> &m, map<perm_string, BaseType *> &b,
@@ -484,10 +486,7 @@ struct TypeEnv {
     varsToBase = b;
     pc         = pclabel;
     module     = modu;
-    invariants = new Invariant();
   }
-
-  void addInvariant(Equality *inv) { invariants->invariants.insert(inv); }
 
   TypeEnv &operator=(const TypeEnv &);
 };
@@ -496,19 +495,7 @@ struct TypeEnv {
 bool isDepExpr(PEIdent *exp, TypeEnv &env) {
   return exp != NULL && env.dep_exprs.contains(exp->get_name());
 }
-struct Constraint {
-  SecType *left;
-  SecType *right;
-  Predicate *pred;
-  Invariant *invariant;
 
-  Constraint(SecType *l, SecType *r, Invariant *inv, Predicate *p) {
-    left      = l;
-    right     = r;
-    pred      = p;
-    invariant = inv;
-  }
-};
 
 inline SexpPrinter &operator<<(SexpPrinter &printer, SecType &t) {
   t.dump(printer);
@@ -551,20 +538,6 @@ inline ostream &operator<<(ostream &o, Predicate &t) {
   return o;
 }
 
-inline SexpPrinter &operator<<(SexpPrinter &printer, Invariant &invs) {
-  for (auto inv : invs.invariants) {
-    printer.startList();
-    inv->dump(printer);
-    printer.endList();
-  }
-  return printer;
-}
-
-inline ostream &operator<<(ostream &o, Invariant &t) {
-  SexpPrinter sp(o, 9999, 2, true);
-  sp << t;
-  return o;
-}
 
 void dump_constraint(SexpPrinter &printer, Constraint &c,
                      std::set<perm_string> genvars, TypeEnv &env);
