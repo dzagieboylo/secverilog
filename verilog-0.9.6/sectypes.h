@@ -103,6 +103,11 @@ public:
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod);
   //This returns true if it was explicitly annotated by the user (and thus shouldn't be changed).
   virtual bool isExplicit() { return _isExplicit; }
+  virtual bool hasTypeVar() { return false; }
+  //Convert this into a new type with all of the VarTypes replaced based on the given map
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&) { return this; }
+  //Conservatively check if this flows to other
+  virtual bool checkFlowsTo(SecType* other);
 
 protected:
   bool _isExplicit = true;
@@ -121,6 +126,7 @@ public:
   bool isTop() { return name == "HIGH"; }
   bool equals(SecType *st);
   SecType *freshVars(unsigned int lineno, map<perm_string, perm_string> &m);
+  virtual bool hasTypeVar() { return false; }
 
 public:
   static ConstType *TOP;
@@ -152,7 +158,10 @@ public:
   perm_string get_type() const;
   bool equals(SecType *st);
   SecType *freshVars(unsigned int lineno, map<perm_string, perm_string> &m);
-  bool hasExpr(perm_string str);
+  bool hasExpr(perm_string str) { return false; }
+  virtual bool hasTypeVar() { return true; }
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&);
+  
 
 private:
   perm_string varname_;
@@ -229,8 +238,11 @@ public:
   void collect_dep_expr(set<perm_string> &m);
   SecType *freshVars(unsigned int lineno, map<perm_string, perm_string> &m);
   bool hasExpr(perm_string str);
+  virtual bool hasTypeVar();
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod);
+  virtual bool checkFlowsTo(SecType* other);
   bool isDepType() { return comp1_->isDepType() || comp2_->isDepType(); }
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&);
 
 private:
   SecType *comp1_;
@@ -265,8 +277,11 @@ public:
   void collect_dep_expr(set<perm_string> &m);
   SecType *freshVars(unsigned int lineno, map<perm_string, perm_string> &m);
   bool hasExpr(perm_string str);
+  virtual bool hasTypeVar();
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod);
   bool isDepType() { return comp1_->isDepType() || comp2_->isDepType(); }
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&);
+  virtual bool checkFlowsTo(SecType* other);
 
 private:
   SecType *comp1_;
@@ -281,6 +296,7 @@ public:
 
   void collect_dep_expr(set<perm_string> &m);
   virtual SecType *next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
+  virtual bool hasTypeVar();
   void dump(SexpPrinter &printer) { _sectype->dump(printer); }
 
   SecType *getInnerType() { return _sectype; }
@@ -314,6 +330,10 @@ public:
 
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod) {
     _sectype->emitFlowsTo(printer, rhs, mod);
+  }
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&);
+  virtual bool checkFlowsTo(SecType* other) {
+    return _sectype->checkFlowsTo(other);
   }
 
 private:
@@ -349,7 +369,7 @@ public:
   virtual SecType *subst(perm_string e1, const str_or_num &e2);
   virtual SecType *subst(const map<perm_string, str_or_num> &m);
   virtual void collect_dep_expr(set<perm_string> &m);
-
+  virtual bool hasTypeVar();
   void dump(SexpPrinter &printer) {
     printer.startList();
     printer << "Policy";
@@ -412,7 +432,7 @@ public:
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod);
   virtual bool equals(SecType *st);
   bool isDepType() { return true; };
-
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&);
 private:
   bool _isNext;
   SecType *_lower;
@@ -435,9 +455,10 @@ struct Predicate {
   Predicate &operator=(const Predicate &);
   Predicate *subst(map<perm_string, perm_string> m) const;
   Predicate() : hypotheses() {}
-  Predicate(const Predicate &p) : hypotheses(p.hypotheses) {}
-
-  bool operator==(const Predicate &other) {
+  Predicate(const Predicate &p) {
+    hypotheses.insert(p.hypotheses.begin(), p.hypotheses.end());
+  }
+  bool operator==(const Predicate other) {
     return hypotheses == other.hypotheses;
   }
 };
@@ -458,8 +479,10 @@ struct Constraint {
     pred      = p;
   }
 
+  //TODO stop lying about predicates
   bool operator==(const Constraint other) {
-    return left->equals(other.left) && right->equals(other.right) && pred == other.pred;
+    return left->equals(other.left) && right->equals(other.right) &&
+     pred->hypotheses.size() == 0 && other.pred->hypotheses.size() == 0;
   }
 };
 
@@ -514,21 +537,6 @@ inline SexpPrinter &operator<<(SexpPrinter &printer, const Predicate &pred) {
       hyp->bexpr_->dumpz3(printer);
     }
   });
-  // auto l = pred.hypotheses;
-  // auto i = l.begin();
-  // if (l.size() > 1) {
-  //   printer.startList();
-  //   printer << "and";
-  // }
-  // if (i != l.end()) {
-  //   (*i)->bexpr_->dumpz3(printer);
-  //   ++i;
-  // }
-  // for (; i != l.end(); ++i) {
-  //   (*i)->bexpr_->dumpz3(printer);
-  // }
-  // if (l.size() > 1)
-  //   printer.endList();
   return printer;
 }
 

@@ -1,0 +1,8 @@
+module internal(
+		input d_in,
+		output d_out
+		);
+   assign d_out = d_in;
+
+endmodule
+   

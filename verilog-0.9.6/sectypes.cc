@@ -72,6 +72,35 @@ bool ConstType::equals(SecType *st) {
   return false;
 }
 
+//Assumes that only bottom and top exist
+bool SecType::checkFlowsTo(SecType* other) {
+  ConstType *right_const   = dynamic_cast<ConstType*>(other);
+  JoinType *right_join     = dynamic_cast<JoinType *>(other);
+  MeetType *right_meet     = dynamic_cast<MeetType *>(other);
+  QuantType *right_quant   = dynamic_cast<QuantType *>(other);
+  IndexType *right_index   = dynamic_cast<IndexType *>(other);
+  PolicyType *right_policy = dynamic_cast<PolicyType *>(other);
+  if (isBottom() || other->isTop()) {
+    return true;
+  } else if (right_const) {
+    return right_const->equals(this);
+  } else if (right_join) {
+    return this->checkFlowsTo(right_join->getFirst()) || this->checkFlowsTo(right_join->getSecond());
+  } else if (right_meet) {
+    return this->checkFlowsTo(right_meet->getFirst()) && this->checkFlowsTo(right_meet->getSecond());
+  //TODO support the following later
+  } else if (right_quant) {
+    return false;
+  } else if (right_index) {
+    return false;
+  } else if (right_policy) {
+    return false;
+  } else {
+    //should be unreachable
+    return false;
+  }
+}
+
 SecType *ConstType::freshVars(unsigned int lineno,
                               map<perm_string, perm_string> &m) {
   return this;
@@ -140,8 +169,6 @@ SecType *VarType::freshVars(unsigned int lineno,
   m[varname_]            = newname;
   return new VarType(newname);
 }
-
-bool VarType::hasExpr(perm_string str) { return varname_ == str; }
 
 list<str_or_num> rllist(1, perm_string::literal("ReadLabel"));
 list<str_or_num> wllist(1, perm_string::literal("WriteLabel"));
@@ -317,6 +344,9 @@ void JoinType::emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod) {
   getSecond()->emitFlowsTo(printer, rhs, mod);
   printer.endList();
 }
+bool JoinType::checkFlowsTo(SecType* other) {
+  return getFirst()->checkFlowsTo(other) && getSecond()->checkFlowsTo(other);
+}
 
 SecType *JoinType::getFirst() { return comp1_; }
 
@@ -399,6 +429,10 @@ SecType *JoinType::freshVars(unsigned int lineno,
 bool JoinType::hasExpr(perm_string str) {
   return comp1_->hasExpr(str) || comp2_->hasExpr(str);
 }
+bool JoinType::hasTypeVar() {
+  return comp1_->hasTypeVar() || comp2_->hasTypeVar();
+}
+////////////////////////////////////////////////
 
 MeetType::MeetType(SecType *ty1, SecType *ty2, bool isExplicit) {
   comp1_ = ty1;
@@ -488,13 +522,20 @@ SecType *MeetType::freshVars(unsigned int lineno,
 bool MeetType::hasExpr(perm_string str) {
   return comp1_->hasExpr(str) || comp2_->hasExpr(str);
 }
+
+bool MeetType::hasTypeVar() {
+  return comp1_->hasTypeVar() || comp2_->hasTypeVar();
+}
+
 void MeetType::emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod) {
   printer.startList("or");
   getFirst()->emitFlowsTo(printer, rhs, mod);
   getSecond()->emitFlowsTo(printer, rhs, mod);
   printer.endList();
 }
-
+bool MeetType::checkFlowsTo(SecType* other) {
+  return getFirst()->checkFlowsTo(other) || getSecond()->checkFlowsTo(other);
+}
 //---------------------------------------------
 // QuantType
 //---------------------------------------------
@@ -503,6 +544,9 @@ QuantType::QuantType(perm_string index_var, SecType *type, bool isExplicit) {
   _name      = lex_strings.make("TODO");
   _sectype   = type;
   _isExplicit = isExplicit;
+}
+bool QuantType::hasTypeVar() {
+  return _sectype->hasTypeVar();
 }
 
 void QuantType::collect_dep_expr(set<perm_string> &m) {
@@ -571,6 +615,10 @@ bool PolicyType::hasExpr(perm_string str) {
          (std::find(_dynamic.begin(), _dynamic.end(), str_or_num(str)) !=
           _dynamic.end()) ||
          _lower->hasExpr(str) || _upper->hasExpr(str);
+}
+
+bool PolicyType::hasTypeVar() {
+  return _lower->hasTypeVar() || _upper->hasTypeVar();
 }
 
 SecType *PolicyType::subst(perm_string e1, const str_or_num &e2) {
@@ -746,7 +794,7 @@ TypeEnv &TypeEnv::operator=(const TypeEnv &e) {
 
 Predicate &Predicate::operator=(const Predicate &p) {
   Predicate *ret  = new Predicate();
-  ret->hypotheses = set<Hypothesis*>(p.hypotheses);
+  ret->hypotheses.insert(p.hypotheses.begin(), p.hypotheses.end());
   return *ret;
 }
 

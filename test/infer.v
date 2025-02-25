@@ -1,3 +1,5 @@
+`include "internal.vh"
+
 module infer(
 	     input {L} clk,
 	     input cond,
@@ -9,7 +11,9 @@ module infer(
    reg	seq {L}	   store_low;
    reg	seq {H}	   store_high;
    reg	store_implicit; //should infer seq type
-  
+
+   wire	tmp_h; //should infer {H} type
+   
    always@(posedge clk) begin
       if (cond) begin
 	 store_low <= low_in;
@@ -26,7 +30,18 @@ module infer(
       end
    end
 
+   internal int1
+     (
+      .d_in (store_implicit),
+      .d_out (tmp_h)
+      );
 
+   internal int2
+     (
+      .d_in (tmp_h),
+      .d_out(sink)
+      );
+   
    always@(posedge clk) begin
       if (cond) begin
 	 store_implicit <= store_high;
@@ -35,6 +50,11 @@ module infer(
       end
    end
 
-   assign sink = store_implicit; //error, store_implicit assumed {H}
-   
+//Expected constraints:
+   //    store_high join store_cond <= store_implicit
+   //    store_low  join store_cond <= store_implicit
+   //    store_implicit <= d_in
+   //    d_out <= tmp_h
+   //    tmp_h <= d_in
+   //    d_out <= sink
 endmodule

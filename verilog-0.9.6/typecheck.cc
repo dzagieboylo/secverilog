@@ -1535,15 +1535,15 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
               }
             }
           }
-
-          if (porttype == NetNet::PINPUT || porttype == NetNet::PINOUT) {
+          Predicate* empty = new Predicate();
+          if (porttype == NetNet::PINPUT) {
             SecType *rhs = paramType;
             SecType *lhs = pinType;
-            Predicate pred;
-            Constraint c = Constraint(lhs, rhs, &pred);
+            Constraint* c = new Constraint(lhs, rhs, empty);
             // TODO genvars properly
             std::set<perm_string> genvars;
-            dump_constraint(printer, c, genvars, env);
+            dump_constraint(printer, *c, genvars, env);
+            env.typeConstraints.insert(c);
             // debugging information
             std::stringstream tmp;
             tmp << "Instantiate parameter " << get_pin_name(idx)
@@ -1559,15 +1559,14 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
             printer.endList();
             printer.singleton("check-sat");
             printer.singleton("pop");
-          } else if (porttype == NetNet::POUTPUT ||
-                     porttype == NetNet::PINOUT) {
+          } else if (porttype == NetNet::POUTPUT) {
             SecType *rhs = pinType;
             SecType *lhs = paramType;
-            Predicate pred;
-            Constraint c = Constraint(lhs, rhs, &pred);
+            Constraint* c = new Constraint(lhs, rhs, empty);
             // TODO genvars properly
             std::set<perm_string> genvars;
-            dump_constraint(printer, c, genvars, env);
+            dump_constraint(printer, *c, genvars, env);
+            env.typeConstraints.insert(c);
             // debugging information
             std::stringstream tmp;
             tmp << "Instantiate parameter " << get_pin_name(idx)
@@ -1583,6 +1582,9 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
             printer.endList();
             printer.singleton("check-sat");
             printer.singleton("pop");
+          } else {
+            //type of pin is INOUT
+            cerr << "warn pin " << get_pin_name(idx) << " is unsupported INOUT type, not checking " << endl;
           }
         } else {
           cerr << "parameter " << *param << " is not found" << endl;
@@ -2296,11 +2298,18 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     }
     z3file.close();
 
+    //Put in canonical form
+    canonicalizeConstraints(env.typeConstraints);
+    //Then remove constraints that don't involve type variables
+    removeConstantConstraints(env.typeConstraints);
     SexpPrinter debug(cerr, 80);
     set<perm_string> empty;
     cerr << "Here are the type constraints for " << name << endl;
     for (auto c : env.typeConstraints) {
       dump_constraint(debug, *c, empty, env);
     }
+    cerr << "Attempting label inference" << endl;
+    auto assgns = inferLabels(env.typeConstraints);
+    dumpAssignments(assgns);
   }
 }
