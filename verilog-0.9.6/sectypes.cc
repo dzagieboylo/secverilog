@@ -75,6 +75,7 @@ bool ConstType::equals(SecType *st) {
 //Assumes that only bottom and top exist
 bool SecType::checkFlowsTo(SecType* other) {
   ConstType *right_const   = dynamic_cast<ConstType*>(other);
+  VarType *right_var       = dynamic_cast<VarType*>(other);
   JoinType *right_join     = dynamic_cast<JoinType *>(other);
   MeetType *right_meet     = dynamic_cast<MeetType *>(other);
   QuantType *right_quant   = dynamic_cast<QuantType *>(other);
@@ -87,6 +88,8 @@ bool SecType::checkFlowsTo(SecType* other) {
   } else if (right_join) {
     return this->checkFlowsTo(right_join->getFirst()) || this->checkFlowsTo(right_join->getSecond());
   } else if (right_meet) {
+    right_meet->getFirst()->dump(debug);
+    right_meet->getSecond()->dump(debug);
     return this->checkFlowsTo(right_meet->getFirst()) && this->checkFlowsTo(right_meet->getSecond());
   //TODO support the following later
   } else if (right_quant) {
@@ -95,8 +98,11 @@ bool SecType::checkFlowsTo(SecType* other) {
     return false;
   } else if (right_policy) {
     return false;
+  } else if (right_var) {
+    cerr << "Unreachable, target shouldn't be a VAR type" << endl;
   } else {
     //should be unreachable
+    cerr << "Unreachable, target should be some subtype of SecType" << endl;
     return false;
   }
 }

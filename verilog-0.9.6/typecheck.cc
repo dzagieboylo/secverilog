@@ -2237,10 +2237,12 @@ void collectSecTypes(map<perm_string, Module *> modules, map<perm_string, SecTyp
     SecTypeMap curMap;
     for (auto w : m.second->wires) {
       auto wirename = w.second->basename();
+      //make sure vartypes are unique per module
+      auto varTypeName = prepend_perm_string(name, wirename);
       auto sectype = w.second->get_sec_type();
       if (sectype == NULL) {
         cerr << "WARN: Found NULL sectype for " << wirename.str() << ", will attempt to infer" << endl;
-        auto tmp = new VarType(wirename);
+        auto tmp = new VarType(varTypeName);
         w.second->set_sec_type(tmp);
       }
       curMap[wirename] = w.second->get_sec_type();
@@ -2261,6 +2263,7 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
   map<perm_string, SecTypeMap> module_sec_types;
   collectBaseTypes(modules, module_base_types); //gather explicit base types
   collectSecTypes(modules, module_sec_types); //gather explicit and missing security types
+  unordered_set<Constraint*> allTypeConstraints;
   for (auto entry : modules) {
     auto name = entry.first;
     Module *rmod = entry.second;
@@ -2302,6 +2305,8 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     canonicalizeConstraints(env.typeConstraints);
     //Then remove constraints that don't involve type variables
     removeConstantConstraints(env.typeConstraints);
+    //Add to ALL constraints
+    allTypeConstraints.insert(env.typeConstraints.begin(), env.typeConstraints.end());
     SexpPrinter debug(cerr, 80);
     set<perm_string> empty;
     cerr << "Here are the type constraints for " << name << endl;
@@ -2312,4 +2317,8 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     auto assgns = inferLabels(env.typeConstraints);
     dumpAssignments(assgns);
   }
+  //OK now try doing global inference
+  cerr << "Attempting global label inference" << endl;
+  auto assgns = inferLabels(allTypeConstraints);
+  dumpAssignments(assgns);
 }

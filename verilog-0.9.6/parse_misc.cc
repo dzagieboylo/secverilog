@@ -49,6 +49,12 @@ perm_string prepend_perm_string(perm_string prefix, perm_string s) {
   return lex_strings.make((p_name + "_" + name).c_str());
 }
 
+perm_string remove_prefix(perm_string prefix, perm_string s) {
+  std::string name = s.str();
+  std::string prefix_name = prefix.str();
+  return lex_strings.make(name.substr(prefix_name.length()).c_str());
+}
+
 perm_string nextify_perm_string(perm_string s) {
   std::string name = s.str();
   return lex_strings.make((name + "_next_").c_str());

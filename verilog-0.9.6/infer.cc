@@ -69,7 +69,6 @@ void removeConstantConstraints(unordered_set<Constraint*> &constraints) {
     }
 }
 
-
 void canonicalizeConstraints(unordered_set<Constraint*> &constraints) {
     unordered_set<Constraint*> to_remove;
     unordered_set<Constraint*> to_add;
@@ -134,10 +133,11 @@ std::map<perm_string, SecType*> inferLabels(unordered_set<Constraint*> &constrai
             if (!satisfied) {
                 if (!varrhs) {
                     cerr << "Could not satisfy the following constraint:" << endl;
-                    SexpPrinter debug(cerr, 80);
+                    SexpPrinter debug(cerr, 80, 2, true);
                     c->right->dump(debug);
-                    cerr << "flows to" << endl;
+                    cerr << " flows to ";
                     c->left->dump(debug);
+                    cerr << endl;
                     return assignments;
                 } else {
                     //assign var to Meet(var assignment, lhs)
@@ -162,8 +162,14 @@ void dumpAssignments(map<perm_string, SecType*> &assignments) {
 }
 
 //VarType substitution code
+
 SecType* VarType::substTypeVars(map<perm_string, SecType*> &varMap) {
-    return getTypeConstraint(varname_, varMap);
+    SecType* tmp = getTypeConstraint(varname_, varMap);
+    //May map to another type variable, and thus need to recursively substitute
+    while (tmp->hasTypeVar()) {
+        tmp = tmp->substTypeVars(varMap);
+    }
+    return tmp;
 }
 SecType* JoinType::substTypeVars(map<perm_string, SecType*> &varMap) {
     auto tmp = new JoinType(comp1_->substTypeVars(varMap), comp2_->substTypeVars(varMap));
@@ -202,4 +208,5 @@ SecType* PolicyType::substTypeVars(map<perm_string, SecType*> &varMap) {
         return tmp;
     }
 }
+
 //End VarType substitution
