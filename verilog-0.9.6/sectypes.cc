@@ -88,8 +88,6 @@ bool SecType::checkFlowsTo(SecType* other) {
   } else if (right_join) {
     return this->checkFlowsTo(right_join->getFirst()) || this->checkFlowsTo(right_join->getSecond());
   } else if (right_meet) {
-    right_meet->getFirst()->dump(debug);
-    right_meet->getSecond()->dump(debug);
     return this->checkFlowsTo(right_meet->getFirst()) && this->checkFlowsTo(right_meet->getSecond());
   //TODO support the following later
   } else if (right_quant) {
