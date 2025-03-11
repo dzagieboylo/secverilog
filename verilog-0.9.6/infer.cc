@@ -155,8 +155,15 @@ std::map<perm_string, SecType*> inferLabels(unordered_set<Constraint*> &constrai
 void dumpAssignments(map<perm_string, SecType*> &assignments) {
     SexpPrinter debug(cerr, 80, 2, true);
     for (auto a : assignments) {
-        cerr << "Assigned " << a.first << " = ";
+        VarType* rhsType = dynamic_cast<VarType*>(a.second);
+        debug << "Assigned " << a.first << " = ";
         a.second->dump(debug);
+        while (rhsType) { //For convenience, dump the whole equality chain
+            auto nextRhs = assignments[rhsType->get_type()];
+            cerr << " = ";
+            nextRhs->dump(debug);
+            rhsType = dynamic_cast<VarType*>(nextRhs);
+        }
         cerr << endl;
     }
 }

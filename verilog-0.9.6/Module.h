@@ -156,9 +156,19 @@ public:
   bool elaborate_sig(Design *, NetScope *scope) const;
 
   PExpr *getAssumptions() const;
-  void typecheck(SexpPrinter &printer, TypeEnv &env,
+  /* This is the first half of typechecking and will write
+   * all of the variable definitions into the output file.
+   * This is everything that should happen _before_ label inference.
+   */
+  void output_definitions(SexpPrinter &printer, TypeEnv &env,
                  map<perm_string, Module *> modules, char *depfun,
                  char *latfile);
+  /* This is the second half of typechekcing and writes all of the
+   * assertions that we want to verify into the file.
+   * This is everything that should happen _after_ label inference.
+   */
+  void typecheck(SexpPrinter &printer, TypeEnv &env,
+                 map<perm_string, Module *> modules);
   void next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes);
   void dumpExprDefs(SexpPrinter &, set<perm_string> exprs) const;
   void CollectDepExprs(SexpPrinter &, TypeEnv &env,

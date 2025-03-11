@@ -503,6 +503,7 @@ struct TypeEnv {
   unordered_set<Constraint*> typeConstraints;
   Module *module;
 
+  TypeEnv() {}
   TypeEnv(map<perm_string, SecType *> &m, map<perm_string, BaseType *> &b,
           SecType *pclabel, Module *modu) {
     varsToType = m;
@@ -511,7 +512,7 @@ struct TypeEnv {
     module     = modu;
   }
 
-  TypeEnv &operator=(const TypeEnv &);
+  // TypeEnv &operator=(const TypeEnv &);
 };
 
 // TODO real logic for this that handles array
@@ -549,5 +550,8 @@ inline ostream &operator<<(ostream &o, Predicate &t) {
 
 void dump_constraint(SexpPrinter &printer, Constraint &c,
                      std::set<perm_string> genvars, TypeEnv &env);
+
+
+void dump_equality_constraint(SexpPrinter &printer, SecType* l, SecType* r);
 
 #endif

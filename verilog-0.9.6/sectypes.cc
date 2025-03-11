@@ -98,6 +98,7 @@ bool SecType::checkFlowsTo(SecType* other) {
     return false;
   } else if (right_var) {
     cerr << "Unreachable, target shouldn't be a VAR type" << endl;
+    return false;
   } else {
     //should be unreachable
     cerr << "Unreachable, target should be some subtype of SecType" << endl;
@@ -791,10 +792,10 @@ bool Hypothesis::matches(perm_string name) {
   return bexpr_->contains_expr(name);
 }
 
-TypeEnv &TypeEnv::operator=(const TypeEnv &e) {
-  TypeEnv *ret = new TypeEnv(e);
-  return *ret;
-}
+// TypeEnv &TypeEnv::operator=(const TypeEnv &e) {
+//   TypeEnv *ret = new TypeEnv(e);
+//   return *ret;
+// }
 
 Predicate &Predicate::operator=(const Predicate &p) {
   Predicate *ret  = new Predicate();
@@ -834,4 +835,13 @@ void dump_constraint(SexpPrinter &printer, Constraint &c,
   }
 
   printer.endList(); // end assert
+}
+
+void dump_equality_constraint(SexpPrinter &printer, SecType* l, SecType* r) {
+  printer.startList("assert");
+  printer.startList("=");
+  l->dump(printer);
+  r->dump(printer);
+  printer.endList();
+  printer.endList();
 }

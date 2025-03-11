@@ -17,73 +17,7 @@
  *    Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA
  */
 
-#include "PExpr.h"
-#include "StringHeap.h"
-#include "config.h"
-
-/*
- * Type-checking takes a list of modules, and generates a Z3 file to be solved
- * by Z3.
- */
-
-#include "PEvent.h"
-#include "PGate.h"
-#include "PGenerate.h"
-#include "PSpec.h"
-#include "compiler.h"
-#include "genvars.h"
-#include "infer.h"
-#include "ivl_assert.h"
-#include "netlist.h"
-#include "netmisc.h"
-#include "parse_api.h"
-#include "parse_misc.h"
-#include "path_assign.h"
-#include "pform.h"
-#include "sectypes.h"
-#include "sexp_printer.h"
-#include "util.h"
-#include <algorithm>
-#include <cstdlib>
-#include <fstream>
-#include <ranges>
-#include <regex>
-#include <sstream>
-#include <stdexcept>
-#include <type_traits>
-#include <typeinfo>
-
-#define ASSUME_NAME "assume"
-
-void output_type_families(SexpPrinter &printer, char *depfun);
-void output_lattice(SexpPrinter &out, char *lattice);
-
-void printDecl(SexpPrinter &out, const char *expr) {
-  out.startList("declare-fun");
-  out << expr << "()"
-      << "Int";
-  out.endList();
-}
-void printBounds(SexpPrinter &out, const char *expr, PWire *def) {
-  if (def) {
-    out.startList("assert");
-    out.startList("<=");
-    out << "0" << expr;
-    out.endList();
-    out.endList();
-
-    out.startList("assert");
-    out.startList("<=");
-    out << expr << std::to_string((1 << (def->getRange() + 1)) - 1);
-    out.endList();
-    out.endList();
-  }
-}
-
-void printDeclaration(SexpPrinter &out, const char *expr, PWire *def) {
-  printDecl(out, expr);
-  printBounds(out, expr, def);
-}
+#include "typecheck.h"
 
 /**
  * Type-check parameters, which are constants.
@@ -962,27 +896,25 @@ void checkUnassignedPaths(SexpPrinter &printer, TypeEnv &env, Module &m) {
   }
 }
 
-/**
- * Type-check a module.
- */
-void Module::typecheck(SexpPrinter &printer, TypeEnv &env,
+
+void Module::output_definitions(SexpPrinter &printer, TypeEnv &env,
                        map<perm_string, Module *> modules, char *depfun,
                        char *latfile) {
   if (debug_typecheck) {
-    cerr << "Module::check " << mod_name() << endl;
-    for (unsigned idx = 0; idx < ports.size(); idx += 1) {
-      port_t *cur = ports[idx];
-      if (cur == 0) {
-        cerr << "    unconnected" << endl;
-        continue;
+      cerr << "Module::check " << mod_name() << endl;
+      for (unsigned idx = 0; idx < ports.size(); idx += 1) {
+        port_t *cur = ports[idx];
+        if (cur == 0) {
+          cerr << "    unconnected" << endl;
+          continue;
+        }
+        cerr << "Port::check " << cur->name << "(" << *cur->expr[0];
+        for (unsigned wdx = 1; wdx < cur->expr.size(); wdx += 1) {
+          cerr << ", " << *cur->expr[wdx];
+        }
+        cerr << ")" << endl;
       }
-      cerr << "Port::check " << cur->name << "(" << *cur->expr[0];
-      for (unsigned wdx = 1; wdx < cur->expr.size(); wdx += 1) {
-        cerr << ", " << *cur->expr[wdx];
-      }
-      cerr << ")" << endl;
     }
-  }
 
   if (debug_typecheck)
     cerr << "typechecking module parameters" << endl;
@@ -991,20 +923,17 @@ void Module::typecheck(SexpPrinter &printer, TypeEnv &env,
     cerr << "typechecking localparams" << endl;
   typecheck_localparams_(printer, env);
 
-  typedef map<perm_string, LineInfo *>::const_iterator genvar_iter_t;
-  for (genvar_iter_t cur = genvars.begin(); cur != genvars.end(); cur++) {
+  for (auto cur = genvars.begin(); cur != genvars.end(); cur++) {
     // genvars are bottom
     env.varsToType[(*cur).first] = ConstType::BOT;
   }
 
-  typedef map<perm_string, PExpr *>::const_iterator specparm_iter_t;
-  for (specparm_iter_t cur = specparams.begin(); cur != specparams.end();
+  for (auto cur = specparams.begin(); cur != specparams.end();
        cur++) {
     throw "specparams not supported";
   }
 
-  typedef list<Module::named_expr_t>::const_iterator parm_hiter_t;
-  for (parm_hiter_t cur = defparms.begin(); cur != defparms.end(); cur++) {
+  for (auto cur = defparms.begin(); cur != defparms.end(); cur++) {
     throw "defparams not supported";
   }
 
@@ -1013,18 +942,18 @@ void Module::typecheck(SexpPrinter &printer, TypeEnv &env,
   if (debug_typecheck)
     cerr << "collecting dependands" << endl;
   CollectDepExprs(printer, env, modules);
+
   if (debug_typecheck)
     cerr << "generating input invariant assumptions" << endl;
   makeAssumptions(this, printer, env);
 
-  typedef list<PGenerate *>::const_iterator genscheme_iter_t;
   if (debug_typecheck)
     cerr << "collecting definite assignments" << endl;
-  for (genscheme_iter_t cur = generate_schemes.begin();
+  for (auto cur = generate_schemes.begin();
        cur != generate_schemes.end(); cur++) {
     (*cur)->collectAssigned(env);
   }
-  for (list<PProcess *>::const_iterator behav = behaviors.begin();
+  for (auto behav = behaviors.begin();
        behav != behaviors.end(); behav++) {
     set<perm_string> s;
     (*behav)->collectAssigned(s);
@@ -1033,7 +962,7 @@ void Module::typecheck(SexpPrinter &printer, TypeEnv &env,
 
   if (debug_typecheck)
     cerr << "collecting genvar values" << endl;
-  for (genscheme_iter_t cur = generate_schemes.begin();
+  for (auto cur = generate_schemes.begin();
        cur != generate_schemes.end(); cur++) {
     (*cur)->fill_genvar_vals(mod_name(), env.genVarVals);
   }
@@ -1081,24 +1010,25 @@ void Module::typecheck(SexpPrinter &printer, TypeEnv &env,
     cerr << "outputting type families" << endl;
   output_type_families(printer, depfun);
 
-  //TODO solve for these as best we can ahead of time
-  // printer.addComment("Declaring unbound labels");
-  // for (auto v : env.varsToType) {
-  //   auto typ = v.second;
-  //   VarType* vartyp = dynamic_cast<VarType*>(typ);
-  //   if (vartyp) {
-  //     printer.startList("declare-fun");
-  //     vartyp->dump(printer);
-  //     printer << "()" << "Label";
-  //     printer.endList();
-  //   }
-  // }
+  printer.addComment("Declaring unbound labels");
+  set<VarType*> varTypes = collectVarTypes(modules, env.varsToType, this);
+  for (auto v : varTypes) {
+    printer.startList("declare-fun");
+    v->dump(printer);
+    printer << "()" << "Label";
+    printer.endList();
+  }
+}
+
+void Module::typecheck(SexpPrinter &printer, TypeEnv &env,
+                       map<perm_string, Module *> modules) {
+  
   printer.addComment("assertions to be verified");
 
   if (debug_typecheck) {
     cerr << "checking generates" << endl;
   }
-  for (genscheme_iter_t cur = generate_schemes.begin();
+  for (auto cur = generate_schemes.begin();
        cur != generate_schemes.end(); cur++) {
     (*cur)->typecheck(printer, env, modules);
   }
@@ -1553,7 +1483,10 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
             tmp.str("");
             tmp.clear();
             printer.startList("echo");
-            tmp << "\"parameter " << get_pin_name(idx) << " for module "
+            tmp << "\"";
+            get_param(idx)->dump(tmp);
+            tmp << " assigned to "
+                << "parameter " << get_pin_name(idx) << " for module "
                 << get_type() << " @" << get_fileline() << "\"";
             printer << tmp.str();
             printer.endList();
@@ -1576,7 +1509,10 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
             tmp.str("");
             tmp.clear();
             printer.startList("echo");
-            tmp << "\"parameter " << get_pin_name(idx) << " for module "
+            tmp << "\"";
+            get_param(idx)->dump(tmp);
+            tmp << " assigned to "
+                << "parameter " << get_pin_name(idx) << " for module "
                 << get_type() << " @" << get_fileline() << "\"";
             printer << tmp.str();
             printer.endList();
@@ -2159,97 +2095,6 @@ void PWhile::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
   throw "PWhile";
 }
 
-struct root_elem {
-  Module *mod;
-  NetScope *scope;
-};
-
-// TODO C++26 should introduce std::embed
-const char *default_lattice =
-#include "default_lattice.lat"
-    ;
-
-/**
- * SecVerilog by default declares a minimal lattice with only bottom and top:
- *                   HIGH
- *
- *                   LOW
- *
- * Programmers can define their own lattice structure in a Z3 file,
- * by using the [-l lattice_file] option to SecVerilog. This will not
- * overwrite the existing bottom and top, and can only specify other, new
- * elements.
- */
-void output_lattice(SexpPrinter &out, char *lattice) {
-  out.lineBreak();
-  out.writeRawLine(default_lattice);
-
-  // append the user-defined lattice
-  if (lattice) {
-    out.lineBreak();
-    string line;
-    ifstream infile(lattice);
-    while (getline(infile, line)) {
-      out.writeRawLine(line);
-    }
-  }
-}
-
-/**
- * SecVerilog by default declares a simple type-level function "LH",
- * which maps 0 to LOW and 1 to HIGH.
- *
- * Programmers can define their own function in a Z3 file,
- * using the [-F depfun_file] option to SecVerilog.
- */
-void output_type_families(SexpPrinter &printer, char *depfun) {
-  printer.lineBreak();
-  printer.addComment("function that maps 0 to LOW; 1 to HIGH");
-  printer.singleton("declare-fun LH (Int) Label");
-  printer.singleton("assert (= (LH 0) LOW)");
-  printer.singleton("assert (= (LH 1) HIGH)");
-
-  // append the user-defined type-level functions
-  if (depfun) {
-    string line;
-    ifstream infile(depfun);
-    while (getline(infile, line)) {
-      printer.writeRawLine(line);
-    }
-  }
-}
-
-void collectBaseTypes(map<perm_string, Module *> modules, map<perm_string, BaseTypeMap>&basetypes) {
-  for (auto m : modules) {
-    auto name = m.first;
-    BaseTypeMap curMap;
-    for (auto w : m.second->wires) {
-      auto wirename = w.second->basename();
-      curMap[wirename] = w.second->get_base_type();
-    }
-    basetypes[name] = curMap;
-  }
-}
-
-void collectSecTypes(map<perm_string, Module *> modules, map<perm_string, SecTypeMap>&sectypes) {
-  for (auto m : modules) {
-    auto name = m.first;
-    SecTypeMap curMap;
-    for (auto w : m.second->wires) {
-      auto wirename = w.second->basename();
-      //make sure vartypes are unique per module
-      auto varTypeName = prepend_perm_string(name, wirename);
-      auto sectype = w.second->get_sec_type();
-      if (sectype == NULL) {
-        cerr << "WARN: Found NULL sectype for " << wirename.str() << ", will attempt to infer" << endl;
-        auto tmp = new VarType(varTypeName);
-        w.second->set_sec_type(tmp);
-      }
-      curMap[wirename] = w.second->get_sec_type();
-    }
-    sectypes[name] = curMap;
-  }
-}
 
 /*
  * This function is the root of all type checking. The input is the list
@@ -2261,9 +2106,11 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
   
   map<perm_string, BaseTypeMap> module_base_types;
   map<perm_string, SecTypeMap> module_sec_types;
+  map<perm_string, string> module_flows_to_output;
   collectBaseTypes(modules, module_base_types); //gather explicit base types
   collectSecTypes(modules, module_sec_types); //gather explicit and missing security types
   unordered_set<Constraint*> allTypeConstraints;
+  
   for (auto entry : modules) {
     auto name = entry.first;
     Module *rmod = entry.second;
@@ -2283,24 +2130,24 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
         }
       }
     }
-    ofstream z3file;
-    string z3filename = string(name.str());
-    size_t pos        = z3filename.find_first_of('.');
-    if (pos != string::npos) {
-      z3filename = z3filename.substr(0, pos);
-    }
-    z3file.open((z3filename + ".z3").c_str());
+    ofstream z3file = createOutputFile(name, ".z3", false);
     SexpPrinter printer(z3file, 80);
+    stringstream flowsToConstraints;
+    SexpPrinter flowsToPrinter(flowsToConstraints, 80);
     try {
-      rmod->typecheck(printer, env, modules, depfun_file_name,
+      rmod->output_definitions(printer, env, modules, depfun_file_name,
                       lattice_file_name);
+      //need to generate these constraints, but write them into the outputFile later
+      rmod->typecheck(flowsToPrinter, env, modules);
     } catch (char const *str) {
       cerr << "Unimplemented " << str << endl;
     } catch (Sexception &exn) {
       cerr << "Error with sexpifying: " << exn.what() << endl;
     }
     z3file.close();
+    module_flows_to_output[name] = flowsToConstraints.str();
 
+    //This is the label inference part!
     //Put in canonical form
     canonicalizeConstraints(env.typeConstraints);
     //Then remove constraints that don't involve type variables
@@ -2309,16 +2156,40 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     allTypeConstraints.insert(env.typeConstraints.begin(), env.typeConstraints.end());
     SexpPrinter debug(cerr, 80);
     set<perm_string> empty;
-    cerr << "Here are the type constraints for " << name << endl;
-    for (auto c : env.typeConstraints) {
-      dump_constraint(debug, *c, empty, env);
+    if (debug_typecheck) {
+      cerr << "Here are the type constraints for " << name << endl;
+      for (auto c : env.typeConstraints) {
+        dump_constraint(debug, *c, empty, env);
+      }
     }
-    cerr << "Attempting label inference" << endl;
-    auto assgns = inferLabels(env.typeConstraints);
-    dumpAssignments(assgns);
+    
+    if (debug_typecheck) {
+      cerr << "Attempting local label inference" << endl;
+      auto assgns = inferLabels(env.typeConstraints);
+      dumpAssignments(assgns);
+    }
+    
   }
   //OK now try doing global inference
   cerr << "Attempting global label inference" << endl;
   auto assgns = inferLabels(allTypeConstraints);
   dumpAssignments(assgns);
+  for (auto entry : modules) {
+    auto name = entry.first;
+    Module *rmod = entry.second;
+    ofstream z3file = createOutputFile(name, ".z3", true);
+    SexpPrinter inferencePrinter(z3file, 80);
+    //first output the inferred label constraints for all VarTypes in this module
+    inferencePrinter.addComment("Asserting Inferred Label Equality Constraints");
+    set<VarType*> varTypes = collectVarTypes(modules, module_sec_types[name], rmod);
+    for (auto vartyp : varTypes) {
+        if (vartyp) {
+          SecType* lhs = assgns[vartyp->get_type()];
+          dump_equality_constraint(inferencePrinter, lhs, vartyp);
+        }
+    }
+    //then output the gathered type constraints
+    z3file << module_flows_to_output[name];
+    z3file.close();
+  }
 }

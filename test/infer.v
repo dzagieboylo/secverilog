@@ -12,7 +12,7 @@ module infer(
    reg	seq {H}	   store_high;
    reg	store_implicit; //should infer seq type
 
-   wire	tmp_h; //should infer {H} type
+   wire	tmp_h; //can infer either {L} or {H}, this file doesn't type check
    
    always@(posedge clk) begin
       if (cond) begin
@@ -30,6 +30,8 @@ module infer(
       end
    end
 
+   //error in some assignment from store_implicit => tmp_h => sink
+   //if {H} is inferred for store_implicit
    internal int1
      (
       .d_in (store_implicit),
@@ -44,7 +46,7 @@ module infer(
    
    always@(posedge clk) begin
       if (cond) begin
-	 store_implicit <= store_high;
+	 store_implicit <= store_high;  //error here if {L} inferred for store_implicit
       end else begin
 	 store_implicit <= store_low;
       end
