@@ -47,10 +47,14 @@ void PEBinary::collect_idens(set<perm_string> &s) const {
   right_->collect_idens(s);
 }
 
+//TODO in the future we can have function types.
+//For now, stick with L(output) = JOIN L(inputs)
 SecType *PECallFunction::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
-  //	throw "PECallFunction";
-  cout << "PECallFunction is ignored" << endl;
-  return ConstType::BOT;
+  SecType* result = ConstType::BOT;
+  for (auto p : parms_) {
+    result = new JoinType(result, p->typecheck(baseTypes, secTypes));
+  }
+  return result;
 }
 void PECallFunction::collect_idens(set<perm_string> &s) const { return; }
 SecType *PEConcat::typecheck(BaseTypeMap &baseTypes, SecTypeMap &secTypes) const {
