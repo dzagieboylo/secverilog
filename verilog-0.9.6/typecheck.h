@@ -173,6 +173,12 @@ std::set<VarType*> collectVarTypes(map<perm_string, Module *> modules, SecTypeMa
     // make sure the parameters have the same label as module declaration
     if (pgmodule != NULL) {
       auto moddef = modules[pgmodule->get_type()];
+      if (moddef == NULL) {
+        if (debug_typecheck) {
+          cerr << "WARN: Found NULL module definition for " << pgmodule->get_type().str() << endl;
+        }
+        continue;
+      }
       auto modwires = moddef->wires;
       for (unsigned idx = 0; idx < pgmodule->get_pin_count(); idx += 1) {
         auto port = modwires[pgmodule->get_pin_name(idx)];

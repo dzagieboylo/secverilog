@@ -282,7 +282,27 @@ void dump_no_overlap_anal(SexpPrinter &p, Module &m, TypeEnv &env,
 }
 
 bool isDefinitelyAssigned(PEIdent *varname, PathAnalysis &paths) {
-  return true;
+  throw new std::runtime_error("Unimplemented");
+}
+
+void collect_assign_path_id(PExpr* expr, PathAnalysis &paths, TypeEnv &env,
+                                    Predicate &pred,
+                                    const std::set<perm_string> &genvars) {
+  auto lv = dynamic_cast<PEIdent *>(expr);
+  auto lvconcat = dynamic_cast<PEConcat*>(expr);
+  if (lv != nullptr) {
+    paths[*lv].push_back({pred, genvars});
+  }
+  if (lvconcat != nullptr) {
+    auto params = lvconcat->getParams();
+    for (unsigned int i = 0; i < params.count(); i++) {
+      collect_assign_path_id(params[i], paths, env, pred, genvars);
+    }
+  }
+  if (lv == nullptr && lvconcat == nullptr) {
+    expr->dump(cerr);
+    throw new std::runtime_error("non PEIdent on lhs!");
+  } 
 }
 
 void Statement::collect_assign_paths(PathAnalysis &, TypeEnv &, Predicate &,
@@ -291,10 +311,7 @@ void Statement::collect_assign_paths(PathAnalysis &, TypeEnv &, Predicate &,
 void PAssign_::collect_assign_paths(PathAnalysis &paths, TypeEnv &env,
                                     Predicate &pred,
                                     const std::set<perm_string> &genvars) {
-  auto lv = dynamic_cast<PEIdent *>(lval_);
-  if (lv == nullptr)
-    throw new std::runtime_error("non PEIdent on lhs!");
-  paths[*lv].push_back({pred, genvars});
+  collect_assign_path_id(lval_, paths, env, pred, genvars);
 }
 
 void PBlock::collect_assign_paths(PathAnalysis &paths, TypeEnv &env,
@@ -308,8 +325,10 @@ void PCAssign::collect_assign_paths(PathAnalysis &paths, TypeEnv &env,
                                     Predicate &pred,
                                     const std::set<perm_string> &genvars) {
   auto lv = dynamic_cast<PEIdent *>(lval_);
-  if (lv == nullptr)
+  if (lv == nullptr) {
+    lval_->dump(cerr);
     throw new std::runtime_error("non PEIdent on lhs!");
+  }
   paths[*lv].push_back({pred, genvars});
 }
 

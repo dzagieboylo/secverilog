@@ -303,7 +303,9 @@ public:
   virtual NetAssign_ *elaborate_lval(Design *des, NetScope *scope,
                                      bool is_force) const;
   virtual bool is_collapsible_net(Design *des, NetScope *scope) const;
-
+  virtual svector<PExpr *>getParams() const {
+    return parms_;
+  }
 private:
   NetNet *elaborate_lnet_common_(Design *des, NetScope *scope,
                                  bool bidirectional_flag) const;

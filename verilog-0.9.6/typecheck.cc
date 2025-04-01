@@ -1173,13 +1173,22 @@ void typecheck_assignment(SexpPrinter &printer, PExpr *lhs, PExpr *rhs,
     SecType *ltype, *rtype, *ltype_orig;
     BaseType *lbase;
     PEIdent *lident = dynamic_cast<PEIdent *>(lhs);
+    PEConcat *lconcat = dynamic_cast<PEConcat *>(lhs);
     lbase           = lhs->check_base_type(env.varsToBase);
     if (lident != NULL) {
       // if lhs is v[x], only want to put type(v) in the type
       ltype_orig = lident->typecheckName(env.varsToBase, env.varsToType, false);
       // want next cycle version if is NextType
       ltype = lident->typecheckName(env.varsToBase, env.varsToType, lbase->isNextType());
+    } else if (lconcat != NULL) {
+      ltype_orig = lconcat->typecheck(env.varsToBase, env.varsToType);
+      // want next cycle version if is NextType
+      ltype = ltype_orig;
+      //TODO fix so that ltype is the next cycle version
+      //lconcat->typecheckName(env.varsToBase, env.varsToType, lbase->isNextType());
     } else {
+      //TODO handle PEConcat on LHS -> need to check that RHS
+      //can assign to EACH of LHS (first approximation)
       auto msg = new std::string("Assigned to non identifier on LHS: ");
       *msg += lhs->get_name().str();
       throw std::runtime_error(*msg);
@@ -1187,11 +1196,13 @@ void typecheck_assignment(SexpPrinter &printer, PExpr *lhs, PExpr *rhs,
 
     rtype = new JoinType(rhs->typecheck(env.varsToBase, env.varsToType), env.pc);
     // if lhs is v[x], want to include type(x) in the rhs type
-    rtype = new JoinType(rtype, lident->typecheckIdx(env.varsToBase, env.varsToType));
+    if (lident != NULL) { //TODO this assumes concats can't have indices, need to fix
+      rtype = new JoinType(rtype, lident->typecheckIdx(env.varsToBase, env.varsToType));
+    }
     // if lhs is NOT a quant type and this is an indexed expression
     // (i.e., we are only assigning to part of the variable)
     // then add ltype_orig into rtype
-    if (!dynamic_cast<QuantType *>(ltype_orig) && lident->hasIndexExpr()) {
+    if (lident != NULL && !dynamic_cast<QuantType *>(ltype_orig) && lident->hasIndexExpr()) {
       rtype = new JoinType(rtype, ltype_orig);
     }
     if (debug_typecheck) {
@@ -1372,11 +1383,15 @@ void PGModule::fillParamMap(map<perm_string, perm_string> &paraSubst,
     map<perm_string, PWire *>::const_iterator ite =
         mwires.find(get_pin_name(idx));
     PWire *port = (*ite).second;
-    if (port->get_port_type() == NetNet::POUTPUT ||
-        port->get_port_type() == NetNet::PINOUT) {
-      paraSubst[get_param(idx)->get_name()] = get_pin_name(idx);
+    if (get_param(idx) == nullptr) {
+      cerr << "param " << idx << "is empty; skipping it on fillParamMap" << endl;
     } else {
-      paraSubst[get_param(idx)->get_name()] = get_param(idx)->get_name();
+      if (port->get_port_type() == NetNet::POUTPUT ||
+          port->get_port_type() == NetNet::PINOUT) {
+        paraSubst[get_param(idx)->get_name()] = get_pin_name(idx);
+      } else {
+        paraSubst[get_param(idx)->get_name()] = get_param(idx)->get_name();
+      }
     }
   }
 }
@@ -1523,7 +1538,7 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
             cerr << "warn pin " << get_pin_name(idx) << " is unsupported INOUT type, not checking " << endl;
           }
         } else {
-          cerr << "parameter " << *param << " is not found" << endl;
+          cerr << "parameter for index " << idx << " is not found" << endl;
         }
       } else {
         cerr << "PWire " << get_pin_name(idx) << " is not found" << endl;
@@ -2185,6 +2200,10 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     for (auto vartyp : varTypes) {
         if (vartyp) {
           SecType* lhs = assgns[vartyp->get_type()];
+          if (lhs == NULL) {
+            cerr << "WARNING: could not find assignment for " << vartyp->get_type().str() << " inferring TOP." << endl;
+            lhs = ConstType::TOP;
+          }
           dump_equality_constraint(inferencePrinter, lhs, vartyp);
         }
     }
