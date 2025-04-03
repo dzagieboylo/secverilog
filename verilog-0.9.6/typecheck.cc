@@ -2126,6 +2126,8 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
   collectSecTypes(modules, module_sec_types); //gather explicit and missing security types
   unordered_set<Constraint*> allTypeConstraints;
   
+  PermissiveSolver solver;
+
   for (auto entry : modules) {
     auto name = entry.first;
     Module *rmod = entry.second;
@@ -2180,14 +2182,14 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     
     if (debug_typecheck) {
       cerr << "Attempting local label inference" << endl;
-      auto assgns = inferLabels(env.typeConstraints);
+      auto assgns = solver.inferLabels(env.typeConstraints);
       dumpAssignments(assgns);
     }
     
   }
   //OK now try doing global inference
   cerr << "Attempting global label inference" << endl;
-  auto assgns = inferLabels(allTypeConstraints);
+  auto assgns = solver.inferLabels(allTypeConstraints);
   dumpAssignments(assgns);
   for (auto entry : modules) {
     auto name = entry.first;

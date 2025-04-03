@@ -105,7 +105,7 @@ public:
   virtual bool isExplicit() { return _isExplicit; }
   virtual bool hasTypeVar() { return false; }
   //Convert this into a new type with all of the VarTypes replaced based on the given map
-  virtual SecType* substTypeVars(map<perm_string, SecType*>&) { return this; }
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType) { return this; }
   //Conservatively check if this flows to other
   virtual bool checkFlowsTo(SecType* other);
 
@@ -160,7 +160,7 @@ public:
   SecType *freshVars(unsigned int lineno, map<perm_string, perm_string> &m);
   bool hasExpr(perm_string str) { return false; }
   virtual bool hasTypeVar() { return true; }
-  virtual SecType* substTypeVars(map<perm_string, SecType*>&);
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
   
 
 private:
@@ -242,7 +242,7 @@ public:
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod);
   virtual bool checkFlowsTo(SecType* other);
   bool isDepType() { return comp1_->isDepType() || comp2_->isDepType(); }
-  virtual SecType* substTypeVars(map<perm_string, SecType*>&);
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
 
 private:
   SecType *comp1_;
@@ -280,7 +280,7 @@ public:
   virtual bool hasTypeVar();
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod);
   bool isDepType() { return comp1_->isDepType() || comp2_->isDepType(); }
-  virtual SecType* substTypeVars(map<perm_string, SecType*>&);
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
   virtual bool checkFlowsTo(SecType* other);
 
 private:
@@ -331,7 +331,7 @@ public:
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod) {
     _sectype->emitFlowsTo(printer, rhs, mod);
   }
-  virtual SecType* substTypeVars(map<perm_string, SecType*>&);
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
   virtual bool checkFlowsTo(SecType* other) {
     return _sectype->checkFlowsTo(other);
   }
@@ -432,7 +432,7 @@ public:
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod);
   virtual bool equals(SecType *st);
   bool isDepType() { return true; };
-  virtual SecType* substTypeVars(map<perm_string, SecType*>&);
+  virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
 private:
   bool _isNext;
   SecType *_lower;

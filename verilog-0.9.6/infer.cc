@@ -108,27 +108,31 @@ void canonicalizeConstraints(unordered_set<Constraint*> &constraints) {
    deduplicate(constraints);
 }
 
-//Ensures that uninitialized type variables map to TOP
-SecType* getTypeConstraint(perm_string name, std::map<perm_string, SecType*> &mapping) {
+//Ensures that uninitialized type variables map to the given initialType
+SecType* getTypeConstraint(perm_string name, std::map<perm_string, SecType*> &mapping, SecType* initialType) {
     if (mapping.contains(name)) {
         return mapping[name];
     } else {
-        mapping[name] = ConstType::TOP;
+        mapping[name] = initialType;
     }
     return mapping[name];
 }
 
 //Assert -> all constraints should be in the form R <= L where R is always a ConstType or a VarType
 //(Other types not supported yet)
-std::map<perm_string, SecType*> inferLabels(unordered_set<Constraint*> &constraints) {
+//This algorithm initializes all types to TOP (most restrictive label)
+//If a constraint of the form VarType <= LBL is not satisfied, then VarType is set to Meet(VarType, LBL)
+//If a constraint of any other form is not satisfied, then the constraints are NOT SAT
+std::map<perm_string, SecType*> RestrictiveSolver::inferLabels(unordered_set<Constraint*> &constraints) {
     std::map<perm_string, SecType*> assignments;
     size_t countSatisfied = 0;
+    SecType* initType = ConstType::TOP;
     while (countSatisfied != constraints.size()) {
         countSatisfied = 0;
         for (auto c : constraints) {
             VarType* varrhs = dynamic_cast<VarType*>(c->right);
-            auto rhsSub = c->right->substTypeVars(assignments);
-            auto lhsSub = c->left->substTypeVars(assignments);
+            auto rhsSub = c->right->substTypeVars(assignments, initType);
+            auto lhsSub = c->left->substTypeVars(assignments, initType);
             bool satisfied = rhsSub->checkFlowsTo(lhsSub);
             if (!satisfied) {
                 if (!varrhs) {
@@ -141,8 +145,45 @@ std::map<perm_string, SecType*> inferLabels(unordered_set<Constraint*> &constrai
                     return assignments;
                 } else {
                     //assign var to Meet(var assignment, lhs)
-                    auto tmp = MeetType(getTypeConstraint(varrhs->get_type(), assignments),c->left);
+                    auto tmp = MeetType(getTypeConstraint(varrhs->get_type(), assignments, initType),c->left);
                     assignments[varrhs->get_type()] = tmp.simplify();
+                }
+            } else {
+                countSatisfied += 1;
+            }
+        }
+    }
+    return assignments;
+}
+
+//Assert -> all constraints should be in the form R <= L where R is always a ConstType or a VarType
+//(Other types not supported yet)
+//This algorithm initializes all types to BOT (least restrictive label)
+//If a constraint of the form VarType <= LBL is not satisfied, then VarType is set to Join(VarType, LBL)
+std::map<perm_string, SecType*> PermissiveSolver::inferLabels(unordered_set<Constraint*> &constraints) {
+    std::map<perm_string, SecType*> assignments;
+    size_t countSatisfied = 0;
+    SecType* initType = ConstType::BOT;
+    while (countSatisfied != constraints.size()) {
+        countSatisfied = 0;
+        for (auto c : constraints) {
+            VarType* varlhs = dynamic_cast<VarType*>(c->left);
+            auto rhsSub = c->right->substTypeVars(assignments, initType);
+            auto lhsSub = c->left->substTypeVars(assignments, initType);
+            bool satisfied = rhsSub->checkFlowsTo(lhsSub);
+            if (!satisfied) {
+                if (!varlhs) {
+                    cerr << "Could not satisfy the following constraint:" << endl;
+                    SexpPrinter debug(cerr, 80, 2, true);
+                    c->right->dump(debug);
+                    cerr << " flows to ";
+                    c->left->dump(debug);
+                    cerr << endl;
+                    return assignments;
+                } else {
+                    //assign var to Join(var assignment, rhs)
+                    auto tmp = JoinType(getTypeConstraint(varlhs->get_type(), assignments, initType),c->right);
+                    assignments[varlhs->get_type()] = tmp.simplify();
                 }
             } else {
                 countSatisfied += 1;
@@ -168,18 +209,19 @@ void dumpAssignments(map<perm_string, SecType*> &assignments) {
     }
 }
 
+
 //VarType substitution code
 
-SecType* VarType::substTypeVars(map<perm_string, SecType*> &varMap) {
-    SecType* tmp = getTypeConstraint(varname_, varMap);
+SecType* VarType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
+    SecType* tmp = getTypeConstraint(varname_, varMap, initType);
     //May map to another type variable, and thus need to recursively substitute
     while (tmp->hasTypeVar()) {
-        tmp = tmp->substTypeVars(varMap);
+        tmp = tmp->substTypeVars(varMap, initType);
     }
     return tmp;
 }
-SecType* JoinType::substTypeVars(map<perm_string, SecType*> &varMap) {
-    auto tmp = new JoinType(comp1_->substTypeVars(varMap), comp2_->substTypeVars(varMap));
+SecType* JoinType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
+    auto tmp = new JoinType(comp1_->substTypeVars(varMap, initType), comp2_->substTypeVars(varMap, initType));
     if (tmp->equals(this)){
         delete tmp;
         return this;
@@ -187,8 +229,8 @@ SecType* JoinType::substTypeVars(map<perm_string, SecType*> &varMap) {
         return tmp;
     }
 }
-SecType* MeetType::substTypeVars(map<perm_string, SecType*> &varMap) {
-    auto tmp = new MeetType(comp1_->substTypeVars(varMap), comp2_->substTypeVars(varMap));
+SecType* MeetType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
+    auto tmp = new MeetType(comp1_->substTypeVars(varMap, initType), comp2_->substTypeVars(varMap, initType));
     if (tmp->equals(this)){
         delete tmp;
         return this;
@@ -196,8 +238,8 @@ SecType* MeetType::substTypeVars(map<perm_string, SecType*> &varMap) {
         return tmp;
     }
 }
-SecType* QuantType::substTypeVars(map<perm_string, SecType*> &varMap) {
-    auto tmp = new QuantType(_index_var, _sectype->substTypeVars(varMap));
+SecType* QuantType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
+    auto tmp = new QuantType(_index_var, _sectype->substTypeVars(varMap, initType));
     if (tmp->equals(this)){
         delete tmp;
         return this;
@@ -205,9 +247,9 @@ SecType* QuantType::substTypeVars(map<perm_string, SecType*> &varMap) {
         return tmp;
     }
 }
-SecType* PolicyType::substTypeVars(map<perm_string, SecType*> &varMap) {
-    auto tmp = new PolicyType(_lower->substTypeVars(varMap), _cond_name, _static,
-     _dynamic, _upper->substTypeVars(varMap));
+SecType* PolicyType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
+    auto tmp = new PolicyType(_lower->substTypeVars(varMap, initType), _cond_name, _static,
+     _dynamic, _upper->substTypeVars(varMap, initType));
     if (tmp->equals(this)){
         delete tmp;
         return this;

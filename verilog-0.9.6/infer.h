@@ -9,6 +9,40 @@
 #include "PGate.h"
 #include "PWire.h"
 
+class ConstraintSolver {
+
+public:
+    ConstraintSolver() {}
+    virtual ~ConstraintSolver() {}
+    /**
+     * Given a set of constraints, map each type variable to a label such that
+     * all of the constraints are satisfied.
+     */
+    virtual map<perm_string, SecType*> inferLabels(unordered_set<Constraint*> &constraints) = 0;
+};
+
+class RestrictiveSolver : ConstraintSolver {
+public:
+    RestrictiveSolver() {}
+    virtual ~RestrictiveSolver() {}
+    /**
+     * Use the iterative algorithm from the decentralized label paper to
+     * infer assignments from type variables to labels.
+    */
+    virtual map<perm_string, SecType*> inferLabels(unordered_set<Constraint*> &constraints);
+};
+
+class PermissiveSolver : ConstraintSolver {
+public:
+    PermissiveSolver() {}
+    virtual ~PermissiveSolver() {}
+    /**
+     * Use the iterative algorithm from the Viadcut paper
+     * infer assignments from type variables to labels.
+     */
+    virtual map<perm_string, SecType*> inferLabels(unordered_set<Constraint*> &constraints);
+};
+
 //Returns true if success (type of ident matches target type or can be coerced)
 //returns false otherwise.
 //This will delete targetType if it does not save a reference to it
@@ -30,11 +64,6 @@ void canonicalizeConstraints(unordered_set<Constraint*> &constraints);
 
 void deduplicate(unordered_set<Constraint*>&constraints);
 
-/**
- * Use the iterative algorithm from the decentralized label paper to
- * infer assignments from type variables to labels.
- */
-map<perm_string, SecType*> inferLabels(unordered_set<Constraint*> &constraints);
 
 void dumpAssignments(map<perm_string, SecType*> &assignments);
 

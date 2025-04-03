@@ -181,6 +181,14 @@ bool synthesis = false;
 bool typecheck_only = false;
 
 /*
+ * This setting will cause label inference
+ * to leave the input labels abstract and will attempt to generate
+ * output labels based on those label variables. This essentially
+ * generates _summaries_ of how the inputs influence the outputs.
+ */
+ bool summarize_labels = false;
+
+/*
  * skip typechecking since the next_cycle_transform breaks things.
  * this is an escape hatch until that's fixed.
  */
@@ -766,7 +774,7 @@ int main(int argc, char *argv[]) {
   flags["-o"]              = strdup("a.out");
   min_typ_max_flag         = TYP;
   min_typ_max_warn         = 10;
-  while ((opt = getopt(argc, argv, "C:f:hN:P:p:Vvzx")) != EOF)
+  while ((opt = getopt(argc, argv, "C:f:hN:P:p:Vvzxi")) != EOF)
     switch (opt) {
 
     case 'C':
@@ -799,6 +807,9 @@ int main(int argc, char *argv[]) {
       break;
     case 'z':
       typecheck_only = true;
+      break;
+    case 'i':
+      summarize_labels = true;
       break;
     case 'x':
       skip_typecheck = true;
