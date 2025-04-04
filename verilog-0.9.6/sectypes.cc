@@ -106,6 +106,14 @@ bool SecType::checkFlowsTo(SecType* other) {
   }
 }
 
+bool ConstType::checkFlowsTo(SecType* other) {
+  if (equals(other)) {
+    return true;
+  } else {
+    return SecType::checkFlowsTo(other);
+  }
+}
+
 SecType *ConstType::freshVars(unsigned int lineno,
                               map<perm_string, perm_string> &m) {
   return this;
@@ -175,6 +183,13 @@ SecType *VarType::freshVars(unsigned int lineno,
   return new VarType(newname);
 }
 
+bool VarType::checkFlowsTo(SecType* other) {
+  if (equals(other)) {
+    return true;
+  } else {
+    return SecType::checkFlowsTo(other);
+  }
+}
 list<str_or_num> rllist(1, perm_string::literal("ReadLabel"));
 list<str_or_num> wllist(1, perm_string::literal("WriteLabel"));
 IndexType *IndexType::RL = new IndexType(perm_string::literal("Par"), rllist);

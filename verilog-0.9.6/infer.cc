@@ -123,8 +123,7 @@ SecType* getTypeConstraint(perm_string name, std::map<perm_string, SecType*> &ma
 //This algorithm initializes all types to TOP (most restrictive label)
 //If a constraint of the form VarType <= LBL is not satisfied, then VarType is set to Meet(VarType, LBL)
 //If a constraint of any other form is not satisfied, then the constraints are NOT SAT
-std::map<perm_string, SecType*> RestrictiveSolver::inferLabels(unordered_set<Constraint*> &constraints) {
-    std::map<perm_string, SecType*> assignments;
+std::map<perm_string, SecType*> RestrictiveSolver::inferLabels(unordered_set<Constraint*> &constraints,map<perm_string, SecType*> &assignments) {
     size_t countSatisfied = 0;
     SecType* initType = ConstType::TOP;
     while (countSatisfied != constraints.size()) {
@@ -160,14 +159,13 @@ std::map<perm_string, SecType*> RestrictiveSolver::inferLabels(unordered_set<Con
 //(Other types not supported yet)
 //This algorithm initializes all types to BOT (least restrictive label)
 //If a constraint of the form VarType <= LBL is not satisfied, then VarType is set to Join(VarType, LBL)
-std::map<perm_string, SecType*> PermissiveSolver::inferLabels(unordered_set<Constraint*> &constraints) {
-    std::map<perm_string, SecType*> assignments;
+std::map<perm_string, SecType*> PermissiveSolver::inferLabels(unordered_set<Constraint*> &constraints, map<perm_string, SecType*> &assignments) {
     size_t countSatisfied = 0;
     SecType* initType = ConstType::BOT;
     while (countSatisfied != constraints.size()) {
         countSatisfied = 0;
         for (auto c : constraints) {
-            VarType* varlhs = dynamic_cast<VarType*>(c->left);
+            VarType* varlhs = dynamic_cast<VarType*>(c->left->simplify());
             auto rhsSub = c->right->substTypeVars(assignments, initType);
             auto lhsSub = c->left->substTypeVars(assignments, initType);
             bool satisfied = rhsSub->checkFlowsTo(lhsSub);
@@ -178,6 +176,10 @@ std::map<perm_string, SecType*> PermissiveSolver::inferLabels(unordered_set<Cons
                     c->right->dump(debug);
                     cerr << " flows to ";
                     c->left->dump(debug);
+                    cerr << endl << "Constraints w/ type vars substituted: " << endl;
+                    rhsSub->dump(debug) ;
+                    cerr << " <= ";
+                    lhsSub->dump(debug);
                     cerr << endl;
                     return assignments;
                 } else {
@@ -191,6 +193,29 @@ std::map<perm_string, SecType*> PermissiveSolver::inferLabels(unordered_set<Cons
         }
     }
     return assignments;
+}
+
+//For the given set of variables, create constraints of the form
+//TypeVar(var) <= lbl_assigned_by_inferece
+//lbl_assigned_by_inferece <= TypeVar(var)
+//However, we use ConstType(inputname) to represent resolution of input type variables
+//These ConstTypes need to be replaced with TypeVar(inputname)
+unordered_set<Constraint*> createResolvedConstraints(map<perm_string, SecType*> &assignments, set<perm_string> varNames) {
+    unordered_set<Constraint*> result;
+    for (auto name : varNames) {
+        VarType* varTyp = new VarType(name);
+        SecType* assignment = assignments[name]; //assume name is present in map
+        //everything should be assigned, but if not set to TOP, and replace ConstType(x) with VarType(x)
+        SecType* resolvedType = assignment->substTypeVars(assignments, ConstType::TOP)->replaceConstTypes(); 
+        if (!varTyp->equals(resolvedType)) {
+            Predicate* empty = new Predicate();
+            Constraint* lConst = new Constraint(varTyp, resolvedType, empty);
+            Constraint* rConst = new Constraint(resolvedType, varTyp, empty);
+            result.insert(lConst);
+            result.insert(rConst);
+        } //otherwise we can skip since it is a tautology
+    }
+    return result;    
 }
 
 void dumpAssignments(map<perm_string, SecType*> &assignments) {
@@ -209,9 +234,11 @@ void dumpAssignments(map<perm_string, SecType*> &assignments) {
     }
 }
 
-
 //VarType substitution code
 
+SecType* ConstType::replaceConstTypes() {
+    return new VarType(name);
+}
 SecType* VarType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
     SecType* tmp = getTypeConstraint(varname_, varMap, initType);
     //May map to another type variable, and thus need to recursively substitute
@@ -229,6 +256,15 @@ SecType* JoinType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* in
         return tmp;
     }
 }
+SecType* JoinType::replaceConstTypes() {
+    auto tmp = new JoinType(comp1_->replaceConstTypes(), comp2_->replaceConstTypes());
+    if (tmp->equals(this)){
+        delete tmp;
+        return this;
+    } else {
+        return tmp;
+    }
+}
 SecType* MeetType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
     auto tmp = new MeetType(comp1_->substTypeVars(varMap, initType), comp2_->substTypeVars(varMap, initType));
     if (tmp->equals(this)){
@@ -238,8 +274,26 @@ SecType* MeetType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* in
         return tmp;
     }
 }
+SecType* MeetType::replaceConstTypes() {
+    auto tmp = new MeetType(comp1_->replaceConstTypes(), comp2_->replaceConstTypes());
+    if (tmp->equals(this)){
+        delete tmp;
+        return this;
+    } else {
+        return tmp;
+    }
+}
 SecType* QuantType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
     auto tmp = new QuantType(_index_var, _sectype->substTypeVars(varMap, initType));
+    if (tmp->equals(this)){
+        delete tmp;
+        return this;
+    } else {
+        return tmp;
+    }
+}
+SecType* QuantType::replaceConstTypes() {
+    auto tmp = new QuantType(_index_var, _sectype->replaceConstTypes());
     if (tmp->equals(this)){
         delete tmp;
         return this;
@@ -257,5 +311,14 @@ SecType* PolicyType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* 
         return tmp;
     }
 }
-
+SecType* PolicyType::replaceConstTypes() {
+    auto tmp = new PolicyType(_lower->replaceConstTypes(), _cond_name, _static,
+     _dynamic, _upper->replaceConstTypes());
+    if (tmp->equals(this)){
+        delete tmp;
+        return this;
+    } else {
+        return tmp;
+    }
+}
 //End VarType substitution

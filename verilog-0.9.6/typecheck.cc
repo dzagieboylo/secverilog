@@ -2124,11 +2124,12 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
   map<perm_string, string> module_flows_to_output;
   collectBaseTypes(modules, module_base_types); //gather explicit base types
   collectSecTypes(modules, module_sec_types); //gather explicit and missing security types
-  unordered_set<Constraint*> allTypeConstraints;
-  
-  PermissiveSolver solver;
-
-  for (auto entry : modules) {
+  map<perm_string, unordered_set<Constraint*>> moduleConstraints;
+  InterfaceSolver solver = InterfaceSolver(new PermissiveSolver());
+  //PermissiveSolver solver;
+  //Typecheck the modules in reverse dependency order
+  auto sorted_modules = toposort(modules);
+  for (auto entry : sorted_modules) {
     auto name = entry.first;
     Module *rmod = entry.second;
     TypeEnv env = TypeEnv(module_sec_types[entry.first], module_base_types[entry.first], ConstType::BOT, rmod);
@@ -2161,43 +2162,60 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     } catch (Sexception &exn) {
       cerr << "Error with sexpifying: " << exn.what() << endl;
     }
-    z3file.close();
     module_flows_to_output[name] = flowsToConstraints.str();
 
     //This is the label inference part!
+    //First get all constraints from this module analysis and
+    //from submodule analysis
+    unordered_set<Constraint*> allConsts = env.typeConstraints;
+    for (auto d : getModuleDependencies(rmod)) {
+      for (auto c : moduleConstraints[d]) {
+        allConsts.insert(c);
+      }
+    }
     //Put in canonical form
-    canonicalizeConstraints(env.typeConstraints);
+    canonicalizeConstraints(allConsts);
     //Then remove constraints that don't involve type variables
-    removeConstantConstraints(env.typeConstraints);
-    //Add to ALL constraints
-    allTypeConstraints.insert(env.typeConstraints.begin(), env.typeConstraints.end());
+    removeConstantConstraints(allConsts);
     SexpPrinter debug(cerr, 80);
     set<perm_string> empty;
     if (debug_typecheck) {
       cerr << "Here are the type constraints for " << name << endl;
-      for (auto c : env.typeConstraints) {
+      for (auto c : allConsts) {
         dump_constraint(debug, *c, empty, env);
       }
     }
     
+    //Find all inputs that have type variables
+    set<perm_string> ports;
+    for (auto port : collectPorts(rmod, name, false, NetNet::PINPUT)) {
+      SecType *styp = env.varsToType[port];
+      VarType *hasVarType = dynamic_cast<VarType*>(styp);
+      if (hasVarType) {
+        ports.insert(prepend_perm_string(name, port));
+      }
+    }
+    solver.setInputs(ports); //solve all constraints in terms of input ports
+    auto assgns = solver.infer(allConsts);
     if (debug_typecheck) {
-      cerr << "Attempting local label inference" << endl;
-      auto assgns = solver.inferLabels(env.typeConstraints);
+      cerr << "Result of local label inference for module " << name << endl;
       dumpAssignments(assgns);
     }
-    
-  }
-  //OK now try doing global inference
-  cerr << "Attempting global label inference" << endl;
-  auto assgns = solver.inferLabels(allTypeConstraints);
-  dumpAssignments(assgns);
-  for (auto entry : modules) {
-    auto name = entry.first;
-    Module *rmod = entry.second;
-    ofstream z3file = createOutputFile(name, ".z3", true);
-    SexpPrinter inferencePrinter(z3file, 80);
-    //first output the inferred label constraints for all VarTypes in this module
-    inferencePrinter.addComment("Asserting Inferred Label Equality Constraints");
+
+    //Now output the input and output constraints for this port
+    //Input are already present in the set ports
+    for (auto p : collectPorts(rmod, name, false, NetNet::POUTPUT)) {
+      SecType *styp = env.varsToType[p];
+      VarType *hasVarType = dynamic_cast<VarType*>(styp);
+      if (hasVarType) {
+        ports.insert(prepend_perm_string(name, p));
+      }
+    }
+    //Save constraints on input and output ports
+    moduleConstraints[name] = createResolvedConstraints(assgns, ports);
+
+    //Now output the inferred label constraints for all VarTypes in this module to the z3 file
+    printer.addComment("Asserting Inferred Label Equality Constraints");
     set<VarType*> varTypes = collectVarTypes(modules, module_sec_types[name], rmod);
     for (auto vartyp : varTypes) {
         if (vartyp) {
@@ -2206,11 +2224,47 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
             cerr << "WARNING: could not find assignment for " << vartyp->get_type().str() << " inferring TOP." << endl;
             lhs = ConstType::TOP;
           }
-          dump_equality_constraint(inferencePrinter, lhs, vartyp);
+          //Skip all of the ConstTypes that aren't BOT or TOP since those were placeholders
+          //Better way to do this is to check if they were input ports but this is fine for now
+          //until we actually use ConstTypes for something in the future
+          ConstType* lhsConst = dynamic_cast<ConstType*>(lhs);
+          if (lhsConst && !lhsConst->isBottom() && !lhsConst->isTop()) {
+            continue;
+          } else {
+            dump_equality_constraint(printer, lhs, vartyp);
+          }
         }
     }
     //then output the gathered type constraints
     z3file << module_flows_to_output[name];
     z3file.close();
   }
+  //OK now try doing global inference
+  // cerr << "Attempting global label inference" << endl;
+  // solver.clearInputs();
+  // auto assgns = solver.infer(allTypeConstraints);
+  // dumpAssignments(assgns);
+  // for (auto entry : modules) {
+  //   auto name = entry.first;
+  //   Module *rmod = entry.second;
+  //   ofstream z3file = createOutputFile(name, ".z3", true);
+  //   //SexpPrinter inferencePrinter(z3file, 80);
+  //   SexpPrinter inferencePrinter(cerr, 80);
+  //   //first output the inferred label constraints for all VarTypes in this module
+  //   inferencePrinter.addComment("Asserting Inferred Label Equality Constraints");
+  //   set<VarType*> varTypes = collectVarTypes(modules, module_sec_types[name], rmod);
+  //   for (auto vartyp : varTypes) {
+  //       if (vartyp) {
+  //         SecType* lhs = inferredTypeAssignments[vartyp->get_type()];
+  //         if (lhs == NULL) {
+  //           cerr << "WARNING: could not find assignment for " << vartyp->get_type().str() << " inferring TOP." << endl;
+  //           lhs = ConstType::TOP;
+  //         }
+  //         dump_equality_constraint(inferencePrinter, lhs, vartyp);
+  //       }
+  //   }
+  //   //then output the gathered type constraints
+  //   z3file << module_flows_to_output[name];
+  //   z3file.close();
+  // }
 }

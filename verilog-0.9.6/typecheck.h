@@ -157,6 +157,20 @@ void collectSecTypes(map<perm_string, Module *> modules, map<perm_string, SecTyp
   }
 }
 
+
+
+std::set<perm_string> collectPorts(Module *mod, perm_string modname, bool prependModName, NetNet::PortType portType) {
+  set<perm_string> input_ports;
+  for (auto wiredef : mod->wires) {
+    //TODO handle inouts properly
+    if (wiredef.second->get_port_type() == portType) {
+      auto name = (prependModName) ? prepend_perm_string(modname, wiredef.first) : wiredef.first;
+      input_ports.insert(name);
+    }
+  }
+  return input_ports;
+}
+
 std::set<VarType*> collectVarTypes(map<perm_string, Module *> modules, SecTypeMap &types, Module *mod) {
   set<VarType*> result;
   set<perm_string> names;
@@ -193,6 +207,51 @@ std::set<VarType*> collectVarTypes(map<perm_string, Module *> modules, SecTypeMa
   }
   return result;
 }
+
+set<perm_string> getModuleDependencies(Module* mod) {
+  set<perm_string> deps;
+  for (auto gate : mod->get_gates()) {
+    PGModule *pgmodule = dynamic_cast<PGModule *>(gate);
+    if (pgmodule != NULL) {
+      deps.insert(pgmodule->get_type()); //add module name as dependency
+    }
+  }
+  return deps;
+}
+/*
+ * Returns a vector of module information sorted based on reverse dependency ordering.
+ * If module A depends on modules B then B will appear _before_ A in the vector.
+ * If module A does not depend on B or vice versa the order is undefined.
+ */
+vector<pair<perm_string, Module*>> toposort(map<perm_string, Module*> modules) {
+  set<perm_string> added; //list of modules that have been added to result
+  map<perm_string, set<perm_string>> dependencies; //module dependencies for each module
+  vector<pair<perm_string, Module*>> result;
+  for (auto entry : modules) {
+    dependencies[entry.first] = getModuleDependencies(entry.second);
+  }
+  //keep iterating until all modules have been added to result
+  while (added.size() != modules.size()) {
+    for (auto entry : modules) {
+      if (added.contains(entry.first)) {
+        continue; //no need to do anything, already added
+      }
+      bool ready = true;
+      for (auto d : dependencies[entry.first]) {
+        if (!added.contains(d)) {
+          ready = false; //still waiting on dependency
+        }
+      }
+      if (ready) {
+        //OK all dependencies met, time to add
+        result.push_back(entry);
+        added.insert(entry.first);
+      }
+    }
+  }
+  return result;
+}
+
 ofstream createOutputFile(perm_string name, string ext, bool append) {
   ofstream z3file;
   string z3filename = string(name.str());

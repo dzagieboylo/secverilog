@@ -106,6 +106,9 @@ public:
   virtual bool hasTypeVar() { return false; }
   //Convert this into a new type with all of the VarTypes replaced based on the given map
   virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType) { return this; }
+  //Replace any instance of ConstType(x) with VarType(x) - this is useful since we
+  //abuse the ConstType to represent a concrete lattice element for VarType that is uninterpreted during inference
+  virtual SecType* replaceConstTypes() { return this; }
   //Conservatively check if this flows to other
   virtual bool checkFlowsTo(SecType* other);
 
@@ -127,6 +130,8 @@ public:
   bool equals(SecType *st);
   SecType *freshVars(unsigned int lineno, map<perm_string, perm_string> &m);
   virtual bool hasTypeVar() { return false; }
+  virtual bool checkFlowsTo(SecType* other);
+  virtual SecType* replaceConstTypes();
 
 public:
   static ConstType *TOP;
@@ -161,7 +166,7 @@ public:
   bool hasExpr(perm_string str) { return false; }
   virtual bool hasTypeVar() { return true; }
   virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
-  
+  virtual bool checkFlowsTo(SecType* other);
 
 private:
   perm_string varname_;
@@ -243,6 +248,7 @@ public:
   virtual bool checkFlowsTo(SecType* other);
   bool isDepType() { return comp1_->isDepType() || comp2_->isDepType(); }
   virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
+  virtual SecType* replaceConstTypes();
 
 private:
   SecType *comp1_;
@@ -281,6 +287,7 @@ public:
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod);
   bool isDepType() { return comp1_->isDepType() || comp2_->isDepType(); }
   virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
+  virtual SecType* replaceConstTypes();
   virtual bool checkFlowsTo(SecType* other);
 
 private:
@@ -332,6 +339,7 @@ public:
     _sectype->emitFlowsTo(printer, rhs, mod);
   }
   virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
+  virtual SecType* replaceConstTypes();
   virtual bool checkFlowsTo(SecType* other) {
     return _sectype->checkFlowsTo(other);
   }
@@ -433,6 +441,8 @@ public:
   virtual bool equals(SecType *st);
   bool isDepType() { return true; };
   virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
+  virtual SecType* replaceConstTypes();
+
 private:
   bool _isNext;
   SecType *_lower;
