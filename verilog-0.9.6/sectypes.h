@@ -113,6 +113,7 @@ public:
   virtual bool checkFlowsTo(SecType* other);
 
 protected:
+  SecType() {};
   bool _isExplicit = true;
 };
 

@@ -125,6 +125,20 @@ void output_type_families(SexpPrinter &printer, char *depfun) {
   }
 }
 
+// This returns the security type associated with the given port
+// on a particular module instance.
+SecType* getPGModulePortType(PGModule* modinst, PWire* port) {
+  SecType* portType = port->get_sec_type();
+  //TODO actually do this replacement by recursing through the type structure
+  VarType* vartyp = dynamic_cast<VarType*>(portType);
+  if (vartyp) {
+    return new VarType(prepend_perm_string(vartyp->get_type(), modinst->get_name()));
+  } else {
+    return portType;
+  }
+}
+
+
 void collectBaseTypes(map<perm_string, Module *> modules, map<perm_string, BaseTypeMap>&basetypes) {
   for (auto m : modules) {
     auto name = m.first;
@@ -194,9 +208,10 @@ std::set<VarType*> collectVarTypes(map<perm_string, Module *> modules, SecTypeMa
         continue;
       }
       auto modwires = moddef->wires;
+      //Create new VarType that is pin_type concatenated w/ module instance name
       for (unsigned idx = 0; idx < pgmodule->get_pin_count(); idx += 1) {
         auto port = modwires[pgmodule->get_pin_name(idx)];
-        SecType* portType = port->get_sec_type();
+        SecType* portType = getPGModulePortType(pgmodule, port);
         VarType* vartyp = dynamic_cast<VarType*>(portType);
         if (vartyp && !names.contains(vartyp->get_type())) {
           names.insert(vartyp->get_type());
@@ -217,6 +232,44 @@ set<perm_string> getModuleDependencies(Module* mod) {
     }
   }
   return deps;
+}
+
+/*
+ * Inferred constraints on input/output labels need to be
+ * specialized for each module instantiation. This function
+ * renames constraints to instance-specific type variable names to allow this.
+ */
+void renameModuleConstraints(
+  Module *rmod, std::map<perm_string, Module *> &modules,
+  std::map<perm_string,std::unordered_set<Constraint *>> &moduleConstraints,
+  std::unordered_set<Constraint *> &allConsts) {
+  // For each PGModule of this type, we need to re-name the type variables to
+  // use the instance name so create a type mapping from VarType(orig) to VarType(orig_instname)
+  for (auto d : getModuleDependencies(rmod)) {
+    for (auto g : rmod->get_gates()) {
+      std::map<perm_string, SecType *> renaming;
+      PGModule *modinst = dynamic_cast<PGModule *>(g);
+      if (modinst && modinst->get_type() == d) { // if correct module type, then rename and add
+        auto modwires = modules[d]->wires;
+        // Create new VarType that is pin_type concatenated w/ module instance name
+        for (unsigned idx = 0; idx < modinst->get_pin_count(); idx += 1) {
+          auto port        = modwires[modinst->get_pin_name(idx)];
+          VarType *portVar = dynamic_cast<VarType *>(port->get_sec_type());
+          if (portVar) {
+            renaming[portVar->get_type()] = getPGModulePortType(modinst, port);
+            cerr << "renaming " << portVar->get_type() << " to " << *renaming[portVar->get_type()] << endl;
+          }
+        }
+        for (auto c : moduleConstraints[d]) {
+          // TODO using NULL to allow TypeVar to TypeVar replacement is a bit gross :(
+          Constraint *renamed_c =
+              new Constraint(c->left->substTypeVars(renaming, NULL),
+                            c->right->substTypeVars(renaming, NULL), c->pred);
+          allConsts.insert(renamed_c);
+        }
+      }
+    }
+  }
 }
 /*
  * Returns a vector of module information sorted based on reverse dependency ordering.

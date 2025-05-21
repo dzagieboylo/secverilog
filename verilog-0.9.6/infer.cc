@@ -234,15 +234,15 @@ void dumpAssignments(map<perm_string, SecType*> &assignments) {
     }
 }
 
-//VarType substitution code
-
+//Begin VarType substitution code
 SecType* ConstType::replaceConstTypes() {
     return new VarType(name);
 }
 SecType* VarType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
     SecType* tmp = getTypeConstraint(varname_, varMap, initType);
     //May map to another type variable, and thus need to recursively substitute
-    while (tmp->hasTypeVar()) {
+    //If no initType is provided, then don't recurse (TODO do this cleaner)
+    while (tmp->hasTypeVar() && initType) {
         tmp = tmp->substTypeVars(varMap, initType);
     }
     return tmp;

@@ -1440,7 +1440,7 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
           NetNet::PortType porttype = port->get_port_type();
 
           SecType *paramType = param->typecheck(env.varsToBase, env.varsToType);
-          SecType *pinType   = port->get_sec_type();
+          SecType *pinType   = getPGModulePortType(this, port);
           for (std::map<perm_string, perm_string>::iterator substiter =
                    pinSubst.begin();
                substiter != pinSubst.end(); ++substiter)
@@ -2152,6 +2152,8 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     SexpPrinter printer(z3file, 80);
     stringstream flowsToConstraints;
     SexpPrinter flowsToPrinter(flowsToConstraints, 80);
+    SexpPrinter debug(cerr, 80);
+    set<perm_string> empty;
     try {
       rmod->output_definitions(printer, env, modules, depfun_file_name,
                       lattice_file_name);
@@ -2165,20 +2167,18 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     module_flows_to_output[name] = flowsToConstraints.str();
 
     //This is the label inference part!
+    ///////////////////////////////////
+
+  
     //First get all constraints from this module analysis and
-    //from submodule analysis
+    //from submodule analysis and specialize submodule constraints to each instantiation
     unordered_set<Constraint*> allConsts = env.typeConstraints;
-    for (auto d : getModuleDependencies(rmod)) {
-      for (auto c : moduleConstraints[d]) {
-        allConsts.insert(c);
-      }
-    }
+   
+    renameModuleConstraints(rmod, modules, moduleConstraints, allConsts);
     //Put in canonical form
     canonicalizeConstraints(allConsts);
     //Then remove constraints that don't involve type variables
     removeConstantConstraints(allConsts);
-    SexpPrinter debug(cerr, 80);
-    set<perm_string> empty;
     if (debug_typecheck) {
       cerr << "Here are the type constraints for " << name << endl;
       for (auto c : allConsts) {
@@ -2203,7 +2203,7 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     }
 
     //Now output the input and output constraints for this port
-    //Input are already present in the set ports
+    //Input are already present in the set `ports`
     for (auto p : collectPorts(rmod, name, false, NetNet::POUTPUT)) {
       SecType *styp = env.varsToType[p];
       VarType *hasVarType = dynamic_cast<VarType*>(styp);
@@ -2211,8 +2211,15 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
         ports.insert(prepend_perm_string(name, p));
       }
     }
+    
     //Save constraints on input and output ports
     moduleConstraints[name] = createResolvedConstraints(assgns, ports);
+    if (debug_typecheck) {
+      cerr << "Here are the I/O constraints for " << name << endl;
+      for (auto c : moduleConstraints[name]) {
+        dump_constraint(debug, *c, empty, env);
+      }
+    }
 
     //Now output the inferred label constraints for all VarTypes in this module to the z3 file
     printer.addComment("Asserting Inferred Label Equality Constraints");
@@ -2224,7 +2231,8 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
             cerr << "WARNING: could not find assignment for " << vartyp->get_type().str() << " inferring TOP." << endl;
             lhs = ConstType::TOP;
           }
-          //Skip all of the ConstTypes that aren't BOT or TOP since those were placeholders
+          //Skip all of the constraints on ConstTypes that aren't BOT or TOP since those were placeholders for inputs (which are polymorphic)
+          //Note that they will still show up in these assertions, since they constrain other inferred labeles
           //Better way to do this is to check if they were input ports but this is fine for now
           //until we actually use ConstTypes for something in the future
           ConstType* lhsConst = dynamic_cast<ConstType*>(lhs);
@@ -2239,32 +2247,5 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     z3file << module_flows_to_output[name];
     z3file.close();
   }
-  //OK now try doing global inference
-  // cerr << "Attempting global label inference" << endl;
-  // solver.clearInputs();
-  // auto assgns = solver.infer(allTypeConstraints);
-  // dumpAssignments(assgns);
-  // for (auto entry : modules) {
-  //   auto name = entry.first;
-  //   Module *rmod = entry.second;
-  //   ofstream z3file = createOutputFile(name, ".z3", true);
-  //   //SexpPrinter inferencePrinter(z3file, 80);
-  //   SexpPrinter inferencePrinter(cerr, 80);
-  //   //first output the inferred label constraints for all VarTypes in this module
-  //   inferencePrinter.addComment("Asserting Inferred Label Equality Constraints");
-  //   set<VarType*> varTypes = collectVarTypes(modules, module_sec_types[name], rmod);
-  //   for (auto vartyp : varTypes) {
-  //       if (vartyp) {
-  //         SecType* lhs = inferredTypeAssignments[vartyp->get_type()];
-  //         if (lhs == NULL) {
-  //           cerr << "WARNING: could not find assignment for " << vartyp->get_type().str() << " inferring TOP." << endl;
-  //           lhs = ConstType::TOP;
-  //         }
-  //         dump_equality_constraint(inferencePrinter, lhs, vartyp);
-  //       }
-  //   }
-  //   //then output the gathered type constraints
-  //   z3file << module_flows_to_output[name];
-  //   z3file.close();
-  // }
 }
+

@@ -13,3 +13,4 @@ lib/
 include/
 share/
 *\.vscode
+preprocessed.v
