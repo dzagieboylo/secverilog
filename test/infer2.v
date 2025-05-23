@@ -1,4 +1,4 @@
-`include "internal2.vh"
+`include "internal.vh"
 
 module infer2(
 	     input  {L} clk,

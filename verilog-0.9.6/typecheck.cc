@@ -1160,6 +1160,26 @@ void typecheck_assignment_constraint(SexpPrinter &printer, SecType *lhs,
 }
 
 /**
+ * Output the check for a given constraint, without saving it to the environment.
+ * This is used for submodule precondition constraints which were discovered during inference.
+ */
+void typecheck_submodule_constraint(SexpPrinter &printer, Constraint* c, string note, TypeEnv &env) {
+  std::set<perm_string> genvars;
+  collect_used_genvars(genvars, *c->pred, env);
+  collect_used_genvars(genvars, c->left, env);
+  collect_used_genvars(genvars, c->right, env);
+  printer.lineBreak();
+  printer.singleton("push");
+  dump_constraint(printer, *c, genvars, env);
+  printer.addComment(note);
+  printer.startList("echo");
+  printer << (string("\"") + note + "\"");
+  printer.endList();
+  printer.singleton("check-sat");
+  printer.singleton("pop");
+}
+
+/**
  * Type-check an assignment (either noblocking or blocking).
  */
 void typecheck_assignment(SexpPrinter &printer, PExpr *lhs, PExpr *rhs,
@@ -2124,7 +2144,8 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
   map<perm_string, string> module_flows_to_output;
   collectBaseTypes(modules, module_base_types); //gather explicit base types
   collectSecTypes(modules, module_sec_types); //gather explicit and missing security types
-  map<perm_string, unordered_set<Constraint*>> moduleConstraints;
+  map<perm_string, unordered_set<Constraint*>> moduleInputConstraints;
+  map<perm_string, unordered_set<Constraint*>> moduleOutputConstraints;
   InterfaceSolver solver = InterfaceSolver(new PermissiveSolver());
   //PermissiveSolver solver;
   //Typecheck the modules in reverse dependency order
@@ -2170,13 +2191,19 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     ///////////////////////////////////
 
   
-    //First get all constraints from this module analysis and
-    //from submodule analysis and specialize submodule constraints to each instantiation
+    //First get all constraints from this module analysis
     unordered_set<Constraint*> allConsts = env.typeConstraints;
-   
-    renameModuleConstraints(rmod, modules, moduleConstraints, allConsts);
+    
+    //Specialize submodule constraints to each instantiation
+    auto submodInputConstraints = renameModuleConstraints(rmod, modules, moduleInputConstraints);
+    auto submodOutputConstraints = renameModuleConstraints(rmod, modules, moduleOutputConstraints);
+
+    allConsts.insert(submodInputConstraints.begin(), submodInputConstraints.end());
+    allConsts.insert(submodOutputConstraints.begin(), submodOutputConstraints.end());
+
     //Put in canonical form
     canonicalizeConstraints(allConsts);
+
     //Then remove constraints that don't involve type variables
     removeConstantConstraints(allConsts);
     if (debug_typecheck) {
@@ -2186,42 +2213,49 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
       }
     }
     
-    //Find all inputs that have type variables
-    set<perm_string> ports;
+    //Find all inputs and outputs that have type variables
+    set<perm_string> inputPorts;
+    set<perm_string> outputPorts;
     for (auto port : collectPorts(rmod, name, false, NetNet::PINPUT)) {
       SecType *styp = env.varsToType[port];
       VarType *hasVarType = dynamic_cast<VarType*>(styp);
       if (hasVarType) {
-        ports.insert(prepend_perm_string(name, port));
+        inputPorts.insert(prepend_perm_string(name, port));
       }
     }
-    solver.setInputs(ports); //solve all constraints in terms of input ports
+    for (auto p : collectPorts(rmod, name, false, NetNet::POUTPUT)) {
+      SecType *styp = env.varsToType[p];
+      VarType *hasVarType = dynamic_cast<VarType*>(styp);
+      if (hasVarType) {
+        outputPorts.insert(prepend_perm_string(name, p));
+      }
+    }
+
+    solver.setInputs(inputPorts); //solve all constraints in terms of input ports
+    solver.setOutputs(outputPorts); //use to determine set of output constraints on instantiations
     auto assgns = solver.infer(allConsts);
     if (debug_typecheck) {
       cerr << "Result of local label inference for module " << name << endl;
       dumpAssignments(assgns);
     }
 
-    //Now output the input and output constraints for this port
-    //Input are already present in the set `ports`
-    for (auto p : collectPorts(rmod, name, false, NetNet::POUTPUT)) {
-      SecType *styp = env.varsToType[p];
-      VarType *hasVarType = dynamic_cast<VarType*>(styp);
-      if (hasVarType) {
-        ports.insert(prepend_perm_string(name, p));
-      }
-    }
     
     //Save constraints on input and output ports
-    moduleConstraints[name] = createResolvedConstraints(assgns, ports);
+    moduleInputConstraints[name] = solver.getInputConstraints(allConsts, assgns);
+    moduleOutputConstraints[name] = solver.createOutputConstraints(assgns);
     if (debug_typecheck) {
-      cerr << "Here are the I/O constraints for " << name << endl;
-      for (auto c : moduleConstraints[name]) {
+      cerr << "Here are the Input constraints for " << name << endl;
+      for (auto c : moduleInputConstraints[name]) {
+        dump_constraint(debug, *c, empty, env);
+      }
+      cerr << "Here are the Output constraints for " << name << endl;
+      for (auto c : moduleOutputConstraints[name]) {
         dump_constraint(debug, *c, empty, env);
       }
     }
 
-    //Now output the inferred label constraints for all VarTypes in this module to the z3 file
+    //Output the inferred label constraints for all VarTypes in this module to the z3 file
+    bool constraintsAdded = false;
     printer.addComment("Asserting Inferred Label Equality Constraints");
     set<VarType*> varTypes = collectVarTypes(modules, module_sec_types[name], rmod);
     for (auto vartyp : varTypes) {
@@ -2240,10 +2274,27 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
             continue;
           } else {
             dump_equality_constraint(printer, lhs, vartyp);
+            constraintsAdded = true;
           }
         }
     }
-    //then output the gathered type constraints
+    //Assume that input constraints are satisfiable:
+    for (auto c : moduleInputConstraints[name]) {
+      dump_assumption(printer, *c, empty, env);
+      constraintsAdded = true;
+    }
+    //And check that all above assumptions are not conflicting (only if constraints were added)
+    if (constraintsAdded) {
+      printer.startList("echo");
+      printer.printString("Checking that all required constraints are satisfiable, expect sat");
+      printer.endList();
+      printer.singleton("check-sat");
+    }
+    //Check input submodule constraints:
+    for (auto c : submodInputConstraints) {
+      typecheck_submodule_constraint(printer, c, "Checking submodule precondition on inputs", env);
+    }
+    //Then output the gathered type constraints from assignments
     z3file << module_flows_to_output[name];
     z3file.close();
   }

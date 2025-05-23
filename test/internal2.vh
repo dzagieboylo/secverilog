@@ -1,11 +1,8 @@
 module internal(
 		input d_in,
-		output d_out
+		output {L} d_out
 		);
-
-   wire		       tmp;
-   assign tmp = d_in;   
-   assign d_out = tmp;   
+   assign d_out = d_in;
 
 endmodule
    

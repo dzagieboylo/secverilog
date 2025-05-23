@@ -72,7 +72,8 @@ bool ConstType::equals(SecType *st) {
   return false;
 }
 
-//Assumes that only bottom and top exist
+//Assumes that only bottom and top exist in the lattice
+//Conservatively overapproximates the flows to relation statically
 bool SecType::checkFlowsTo(SecType* other) {
   ConstType *right_const   = dynamic_cast<ConstType*>(other);
   VarType *right_var       = dynamic_cast<VarType*>(other);
@@ -97,7 +98,6 @@ bool SecType::checkFlowsTo(SecType* other) {
   } else if (right_policy) {
     return false;
   } else if (right_var) {
-    cerr << "Unreachable, target shouldn't be a VAR type" << endl;
     return false;
   } else {
     //should be unreachable
@@ -827,24 +827,30 @@ Predicate *Predicate::subst(map<perm_string, perm_string> m) const {
   return ret;
 }
 
-
-void dump_constraint(SexpPrinter &printer, Constraint &c,
-                     std::set<perm_string> genvars, TypeEnv &env) {
+void _dump_const_internal(SexpPrinter &printer, Constraint &c,
+  std::set<perm_string> genvars, TypeEnv &env, bool isAssumption) {
   dump_genvar_pred(printer, genvars, env);
   printer.startList("assert");
 
   bool hashypo = c.pred != NULL && c.pred->hypotheses.size() != 0;
 
   if (hashypo) {
-    printer.startList("and");
+  printer.startList("and");
   }
   if (hashypo) {
-    printer << (*c.pred);
+  printer << (*c.pred);
   }
 
-  printer.startList("not");
+  if (!isAssumption) {
+    printer.startList("not"); //For assumptions, just assert them!
+  }
+  
   c.right->simplify()->emitFlowsTo(printer, c.left->simplify(), env.module);
-  printer.endList();
+  
+  if (!isAssumption) {
+    printer.endList();
+  }
+  
   if (hashypo) {
     printer.endList();
   }
@@ -852,6 +858,15 @@ void dump_constraint(SexpPrinter &printer, Constraint &c,
   printer.endList(); // end assert
 }
 
+void dump_constraint(SexpPrinter &printer, Constraint &c,
+                     std::set<perm_string> genvars, TypeEnv &env) {
+ _dump_const_internal(printer, c, genvars, env, false);
+}
+
+void dump_assumption(SexpPrinter &printer, Constraint &c,
+  std::set<perm_string> genvars, TypeEnv &env) {
+  _dump_const_internal(printer, c, genvars, env, true);
+}
 void dump_equality_constraint(SexpPrinter &printer, SecType* l, SecType* r) {
   printer.startList("assert");
   printer.startList("=");

@@ -76,16 +76,74 @@ public:
         return _baseSolver->inferLabels(constraints, initAssgns);
     }
 
+    /**
+     * Returns all constraints of the form InputTypeVar <= SecType.
+     * This is used as an assumption when typechecking the module, and then becomes a precondition for instantiation.
+     * We can also omit any constraints that we can statically prove hold to simplify the generated z3.
+     */
+    virtual unordered_set<Constraint*> getInputConstraints(unordered_set<Constraint*> &constraints,
+        std::map<perm_string, SecType*> &assignments) {
+        unordered_set<Constraint*> result;
+        //Extract constraints of the form: VarType(input) <= SecType
+        //And resolves type variables based on result of inference
+        for (auto c : constraints) {
+            VarType* rhs = dynamic_cast<VarType*>(c->right);
+            if (rhs && _inputNames.contains(rhs->get_type())) {
+                SecType* resolvedType = c->left->substTypeVars(assignments, ConstType::TOP)->replaceConstTypes();
+                if (!rhs->checkFlowsTo(resolvedType)) {
+                    result.insert(new Constraint(resolvedType, rhs, c->pred));
+                }
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Given a set of type variable assignments (TypeVarName -> SecType)
+     * and a set of target type variables, resolve assignments as much as possible
+     * so that no type variables in the assignment.
+     * E.g., if L(x) = L(y) and L(y) = TOP, then resolve L(x) = TOP
+     * Then create constraints that imply these equality (L(x) <= TOP, TOP <= L(x))
+     */
+    unordered_set<Constraint*> createOutputConstraints(map<perm_string, SecType*> &assignments) {
+        unordered_set<Constraint*> result;
+        //For the given set of variables, create constraints of the form
+        //TypeVar(var) <= lbl_assigned_by_inferece
+        //lbl_assigned_by_inferece <= TypeVar(var)
+        //However, we use ConstType(inputname) to represent resolution of input type variables
+        //These ConstTypes need to be replaced with TypeVar(inputname)
+        for (auto name : _outputNames) {
+            VarType* varTyp = new VarType(name);
+            SecType* assignment = assignments[name]; //assume name is present in map
+            //everything should be assigned, but if not set to TOP, and replace ConstType(x) with VarType(x)
+            SecType* resolvedType = assignment->substTypeVars(assignments, ConstType::TOP)->replaceConstTypes(); 
+            if (!varTyp->equals(resolvedType)) {
+                Predicate* empty = new Predicate();
+                Constraint* lConst = new Constraint(varTyp, resolvedType, empty);
+                Constraint* rConst = new Constraint(resolvedType, varTyp, empty);
+                result.insert(lConst);
+                result.insert(rConst);
+            } //otherwise we can skip since it is a tautology
+        }
+        return result;
+    }
+
     virtual void setInputs(set<perm_string> inputNames) {
         _inputNames = inputNames; //just copy
     }
-
     virtual void clearInputs() {
         _inputNames.clear();
+    }
+    virtual void setOutputs(set<perm_string> outputNames) {
+        _outputNames = outputNames; //just copy
+    }
+    virtual void clearoutputs() {
+        _outputNames.clear();
     }
 private:
     ConstraintSolver* _baseSolver;
     set<perm_string> _inputNames;
+    set<perm_string> _outputNames;
 };
 
 //Returns true if success (type of ident matches target type or can be coerced)
@@ -107,16 +165,6 @@ void removeConstantConstraints(unordered_set<Constraint*> &constraints);
 void canonicalizeConstraints(unordered_set<Constraint*> &constraints);
 
 void deduplicate(unordered_set<Constraint*>&constraints);
-
-/**
- * Given a set of type variable assignments (TypeVarName -> SecType)
- * and a set of target type variables, resolve assignments as much as possible
- * so that no type variables in the assignment.
- * E.g., if L(x) = L(y) and L(y) = TOP, then resolve L(x) = TOP
- * Then create constraints that imply these equality (L(x) <= TOP, TOP <= L(x))
- */
-unordered_set<Constraint*> createResolvedConstraints(map<perm_string, SecType*> &assignments,
-    set<perm_string> varnames);
 
 void dumpAssignments(map<perm_string, SecType*> &assignments);
 

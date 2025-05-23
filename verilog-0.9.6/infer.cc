@@ -181,7 +181,9 @@ std::map<perm_string, SecType*> PermissiveSolver::inferLabels(unordered_set<Cons
                     cerr << " <= ";
                     lhsSub->dump(debug);
                     cerr << endl;
-                    return assignments;
+                    //Consider it satisfied, we will end up verifying satisfiability of all constraints again later anyway
+                    //This makes debugging easier and allows us to imprecisely check flows to constraints during inference soundly
+                    countSatisfied += 1;
                 } else {
                     //assign var to Join(var assignment, rhs)
                     auto tmp = JoinType(getTypeConstraint(varlhs->get_type(), assignments, initType),c->right);
@@ -193,29 +195,6 @@ std::map<perm_string, SecType*> PermissiveSolver::inferLabels(unordered_set<Cons
         }
     }
     return assignments;
-}
-
-//For the given set of variables, create constraints of the form
-//TypeVar(var) <= lbl_assigned_by_inferece
-//lbl_assigned_by_inferece <= TypeVar(var)
-//However, we use ConstType(inputname) to represent resolution of input type variables
-//These ConstTypes need to be replaced with TypeVar(inputname)
-unordered_set<Constraint*> createResolvedConstraints(map<perm_string, SecType*> &assignments, set<perm_string> varNames) {
-    unordered_set<Constraint*> result;
-    for (auto name : varNames) {
-        VarType* varTyp = new VarType(name);
-        SecType* assignment = assignments[name]; //assume name is present in map
-        //everything should be assigned, but if not set to TOP, and replace ConstType(x) with VarType(x)
-        SecType* resolvedType = assignment->substTypeVars(assignments, ConstType::TOP)->replaceConstTypes(); 
-        if (!varTyp->equals(resolvedType)) {
-            Predicate* empty = new Predicate();
-            Constraint* lConst = new Constraint(varTyp, resolvedType, empty);
-            Constraint* rConst = new Constraint(resolvedType, varTyp, empty);
-            result.insert(lConst);
-            result.insert(rConst);
-        } //otherwise we can skip since it is a tautology
-    }
-    return result;    
 }
 
 void dumpAssignments(map<perm_string, SecType*> &assignments) {
@@ -236,7 +215,11 @@ void dumpAssignments(map<perm_string, SecType*> &assignments) {
 
 //Begin VarType substitution code
 SecType* ConstType::replaceConstTypes() {
-    return new VarType(name);
+    if (!isBottom() && !isTop()) { //these should stay consttypes
+        return new VarType(name);
+    } else {
+        return this;
+    }
 }
 SecType* VarType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
     SecType* tmp = getTypeConstraint(varname_, varMap, initType);

@@ -561,7 +561,10 @@ inline ostream &operator<<(ostream &o, Predicate &t) {
 
 void dump_constraint(SexpPrinter &printer, Constraint &c,
                      std::set<perm_string> genvars, TypeEnv &env);
-
+                     
+void dump_assumption(SexpPrinter &printer, Constraint &c,
+                      std::set<perm_string> genvars, TypeEnv &env);
+                  
 
 void dump_equality_constraint(SexpPrinter &printer, SecType* l, SecType* r);
 
