@@ -84,6 +84,8 @@ bool SecType::checkFlowsTo(SecType* other) {
   PolicyType *right_policy = dynamic_cast<PolicyType *>(other);
   if (isBottom() || other->isTop()) {
     return true;
+  } else if (this->equals(other)) {
+    return true;
   } else if (right_const) {
     return right_const->equals(this);
   } else if (right_join) {
