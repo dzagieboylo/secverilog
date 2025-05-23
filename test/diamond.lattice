@@ -3,3 +3,4 @@
 (assert (and (not (leq D1 D2)) (not (leq D2 D1))))
 (assert (and (not (= D1 HIGH)) (not (= D2 HIGH))))
 (assert (and (not (= D1 LOW))  (not (= D2 LOW)) ))
+(assert (forall ((x Label)) (or (= x LOW) (= x HIGH) (= x D1) (= x D2))))
