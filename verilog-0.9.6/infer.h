@@ -114,7 +114,12 @@ public:
         //These ConstTypes need to be replaced with TypeVar(inputname)
         for (auto name : _outputNames) {
             VarType* varTyp = new VarType(name);
-            SecType* assignment = assignments[name]; //assume name is present in map
+            SecType* assignment;
+            if (!assignments.contains(name)) {
+                assignment = ConstType::BOT; //there must have been no constraints on this, assume it is BOT
+            } else {
+                 assignment = assignments[name]; 
+            }
             //everything should be assigned, but if not set to TOP, and replace ConstType(x) with VarType(x)
             SecType* resolvedType = assignment->substTypeVars(assignments, ConstType::TOP)->replaceConstTypes(); 
             if (!varTyp->equals(resolvedType)) {
