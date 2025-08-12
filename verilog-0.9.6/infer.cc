@@ -166,8 +166,11 @@ std::map<perm_string, SecType*> PermissiveSolver::inferLabels(unordered_set<Cons
         countSatisfied = 0;
         for (auto c : constraints) {
             VarType* varlhs = dynamic_cast<VarType*>(c->left->simplify());
+            SexpPrinter debug(cerr, 80, 2, true);
             auto rhsSub = c->right->substTypeVars(assignments, initType);
+            // cerr << "here1" << endl;
             auto lhsSub = c->left->substTypeVars(assignments, initType);
+            // cerr << "here2" << endl;
             bool satisfied = rhsSub->checkFlowsTo(lhsSub);
             if (!satisfied) {
                 if (!varlhs) {
@@ -224,9 +227,13 @@ SecType* ConstType::replaceConstTypes() {
 SecType* VarType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
     SecType* tmp = getTypeConstraint(varname_, varMap, initType);
     //May map to another type variable, and thus need to recursively substitute
+    //In recursive substitution map this to itself (which should otherwise never happen)
+    //Then base case becomes tmp == this
+    auto mapCopy(varMap);
+    mapCopy[this->get_type()] = this;
     //If no initType is provided, then don't recurse (TODO do this cleaner)
-    while (tmp->hasTypeVar() && initType) {
-        tmp = tmp->substTypeVars(varMap, initType);
+    if (tmp->hasTypeVar() && initType && !tmp->equals(this)) {  
+        tmp = tmp->substTypeVars(mapCopy, initType);
     }
     return tmp;
 }
