@@ -1459,7 +1459,7 @@ void PGModule::typecheck(SexpPrinter &printer, TypeEnv &env,
           PWire *port               = (*ite).second;
           NetNet::PortType porttype = port->get_port_type();
 
-          SecType *paramType = param->typecheck(env.varsToBase, env.varsToType);
+          SecType *paramType = param->typecheck(env.varsToBase, env.varsToType)->simplify();
           SecType *pinType   = getPGModulePortType(this, port);
           for (std::map<perm_string, perm_string>::iterator substiter =
                    pinSubst.begin();

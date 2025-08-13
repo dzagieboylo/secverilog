@@ -89,7 +89,12 @@ bool SecType::checkFlowsTo(SecType* other) {
   } else if (right_const) {
     return right_const->equals(this);
   } else if (right_join) {
-    return this->checkFlowsTo(right_join->getFirst()) || this->checkFlowsTo(right_join->getSecond());
+    for (auto c : right_join->getComps()) {
+      if (this->checkFlowsTo(c)) {
+        return true;
+      }
+    }
+    return false;
   } else if (right_meet) {
     return this->checkFlowsTo(right_meet->getFirst()) && this->checkFlowsTo(right_meet->getSecond());
   //TODO support the following later
@@ -127,8 +132,9 @@ void SecType::emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod) {
   PolicyType *right_policy = dynamic_cast<PolicyType *>(rhs);
   if (right_join) {
     printer.startList("or");
-    emitFlowsTo(printer, right_join->getFirst(), mod);
-    emitFlowsTo(printer, right_join->getSecond(), mod);
+    for (auto c : right_join->getComps()) {
+      emitFlowsTo(printer, c, mod);
+    }
     printer.endList();
     return;
   }
@@ -310,50 +316,51 @@ bool IndexType::hasExpr(perm_string str) {
           exprs_.end());
 }
 
+
+void insertLblToSet(set<SecType*>& s, SecType* lbl) {
+  for (auto l : s) {
+    if (l->equals(lbl)) {
+      return;
+    }
+  }
+  s.insert(lbl);
+}
+
+void insertLblSetToSet(set<SecType*>& s, set<SecType*> lbls) {
+  for (auto l : lbls) {
+    insertLblToSet(s, l);
+  }
+}
+
+//Joins should never contain other joins (unless they are nested below another type)
 JoinType::JoinType(SecType *ty1, SecType *ty2, bool isExplicit) {
   _isExplicit = isExplicit;
   SecType *st1  = ty1->simplify();
   SecType *st2  = ty2->simplify();
   JoinType *jt1 = dynamic_cast<JoinType *>(st1);
-  JoinType *jt2 = dynamic_cast<JoinType *>(st2);
-  // joining joins
-  if (jt1 && jt2 && jt1->equals(jt2)) {
-    comp1_ = jt1->comp1_;
-    comp2_ = jt1->comp2_;
-  } else if (jt1 && jt2 && jt1->comp1_->equals(jt2->comp1_)) {
-    comp1_ = jt1;
-    comp2_ = jt2->comp2_;
-  } else if (jt1 && jt2 && jt1->comp1_->equals(jt2->comp2_)) {
-    comp1_ = jt1;
-    comp2_ = jt2->comp1_;
-  } else if (jt1 && jt2 && jt1->comp2_->equals(jt2->comp1_)) {
-    comp1_ = jt1;
-    comp2_ = jt2->comp2_;
-  } else if (jt1 && jt2 && jt1->comp2_->equals(jt2->comp2_)) {
-    comp1_ = jt1;
-    comp2_ = jt2->comp1_;
-  } else if (jt1 && (jt1->comp1_->equals(st2) || jt1->comp2_->equals(st2))) {
-    comp1_ = jt1->comp1_;
-    comp2_ = jt1->comp2_;
-  } else if (jt2 && (jt2->comp1_->equals(st1) || jt2->comp2_->equals(st1))) {
-    comp1_ = jt2->comp1_;
-    comp2_ = jt2->comp2_;
+  if (jt1) {
+    insertLblSetToSet(this->comps_, jt1->getComps());
   } else {
-    // joining meets
-    MeetType *mt1 = dynamic_cast<MeetType *>(st1);
-    MeetType *mt2 = dynamic_cast<MeetType *>(st2);
-    if (mt1 && !mt2 &&
-        (mt1->getFirst()->equals(st2) || mt1->getSecond()->equals(st2))) {
-      comp1_ = st2;
-      comp2_ = st2;
-    } else if (!mt1 && mt2 &&
-               (mt2->getFirst()->equals(st1) ||
-                mt2->getSecond()->equals(st1))) {
-      comp1_ = st1;
-      comp2_ = st1;
-    } else { // fallback
-      comp1_ = st1;
-      comp2_ = st2;
+    insertLblToSet(this->comps_, st1);
+  }
+  JoinType *jt2 = dynamic_cast<JoinType *>(st2);
+  if (jt2) {
+    insertLblSetToSet(this->comps_, jt2->getComps());
+  } else {
+    insertLblToSet(this->comps_, st2);
+  }
+}
+
+
+JoinType::JoinType(set<SecType*>& lbls, bool isExplicit) {
+  _isExplicit = isExplicit;
+  for (auto l : lbls) {
+    SecType *c  = l->simplify();
+    JoinType *j = dynamic_cast<JoinType *>(c);
+    if (j) { //don't nest joins
+      insertLblSetToSet(this->comps_, j->getComps());
+      } else {
+      insertLblToSet(this->comps_, c);
     }
   }
 }
@@ -362,48 +369,72 @@ JoinType::~JoinType() {}
 
 void JoinType::emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod) {
   printer.startList("and");
-  getFirst()->emitFlowsTo(printer, rhs, mod);
-  getSecond()->emitFlowsTo(printer, rhs, mod);
+  for (auto c : comps_) {
+    c->emitFlowsTo(printer, rhs, mod);
+  }
   printer.endList();
 }
+
 bool JoinType::checkFlowsTo(SecType* other) {
-  return getFirst()->checkFlowsTo(other) && getSecond()->checkFlowsTo(other);
+  bool result = true;
+  for (auto c : comps_) {
+    result &= c->checkFlowsTo(other);
+  }
+  return result;
 }
 
-SecType *JoinType::getFirst() { return comp1_; }
-
-SecType *JoinType::getSecond() { return comp2_; }
 
 SecType *JoinType::subst(perm_string e1, const str_or_num &e2) {
-  SecType *comp1new = comp1_->subst(e1, e2);
-  SecType *comp2new = comp2_->subst(e1, e2);
-  if (comp1_ != comp1new || comp2_ != comp2new) {
-    return new JoinType(comp1_->subst(e1, e2), comp2_->subst(e1, e2));
-  } else
+  bool modified = false;
+  set<SecType*> newcomps;
+  for (auto c : comps_) {
+    SecType *c_new = c->subst(e1, e2);
+    modified |= !c_new->equals(c);
+    newcomps.insert(c_new);
+  }
+  if (modified) {
+    SecType* nt = new JoinType(newcomps);
+    return nt->simplify();
+  } else {
     return this;
+  }
 }
 
 SecType *JoinType::subst(const map<perm_string, str_or_num> &m) {
-  SecType *comp1new = comp1_->subst(m);
-  SecType *comp2new = comp2_->subst(m);
-  if (comp1_ != comp1new || comp2_ != comp2new) {
-    return new JoinType(comp1_->subst(m), comp2_->subst(m));
-  } else
+  bool modified = false;
+  set<SecType*> newcomps;
+  for (auto c : comps_) {
+    SecType *c_new = c->subst(m);
+    modified |= !c_new->equals(c);
+    newcomps.insert(c_new);
+  }
+  if (modified) {
+    SecType* nt = new JoinType(newcomps);
+    return nt->simplify();
+  } else {
     return this;
+  }
 }
 
 SecType *JoinType::next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
-  SecType *comp1new = comp1_->next_cycle(baseTypes, secTypes);
-  SecType *comp2new = comp2_->next_cycle(baseTypes, secTypes);
-  if (comp1_ != comp1new || comp2_ != comp2new) {
-    return new JoinType(comp1_->next_cycle(baseTypes, secTypes), comp2_->next_cycle(baseTypes, secTypes));
-  } else
+  bool modified = false;
+  set<SecType*> newcomps;
+  for (auto c : comps_) {
+    SecType* c_new = c->next_cycle(baseTypes, secTypes);
+    modified |= !c_new->equals(c);
+    newcomps.insert(c_new);
+  }
+  if (modified) {
+    SecType* nt = new JoinType(newcomps);
+    return nt->simplify();
+  } else {
     return this;
+  }
 }
 
 JoinType &JoinType::operator=(const JoinType &t) {
-  JoinType *ret = new JoinType(t.comp1_, t.comp2_);
-  return *ret;
+  comps_ = t.comps_;
+  return *this;
 }
 
 SecType *JoinType::simplify() {
@@ -411,48 +442,80 @@ SecType *JoinType::simplify() {
     return ConstType::BOT;
   else if (isTop())
     return ConstType::TOP;
+  else if (comps_.size() == 1) {
+    auto elem = *comps_.begin();
+    return elem->simplify();
+  }
   else {
-    if (comp1_->isBottom())
-      return comp2_->simplify();
-    else if (comp2_->isBottom())
-      return comp1_->simplify();
-    else {
-      SecType *lsimpl = comp1_->simplify();
-      SecType *rsimpl = comp2_->simplify();
-      if (lsimpl->equals(rsimpl)) {
-        return lsimpl;
+    bool modified = false;
+    set<SecType*> new_comps;
+    for (auto c : comps_) {
+      SecType* c_new = c->simplify();
+      if (c_new->isBottom()) {
+        modified = true;
+        //just remove it!
+        if (c_new != c) {
+          delete c_new;
+        }
       } else {
-        return new JoinType(lsimpl, rsimpl, _isExplicit);
+        modified |= !c_new->equals(c);
+        new_comps.insert(c_new);
       }
+    }
+    if (modified) {
+      if (new_comps.size() > 1) {
+        return new JoinType(new_comps);
+      } else if (new_comps.size() == 1) {
+        return *(new_comps.begin());
+      } else {
+        throw std::runtime_error("Unreachable empty join after simplification");
+      }
+    } else {
+      return this;
     }
   }
 }
 
 bool JoinType::equals(SecType *st) {
   JoinType *ct = dynamic_cast<JoinType *>(st);
-  if (ct != NULL) {
-    return (comp1_->equals(ct->comp1_) && comp2_->equals(ct->comp2_)) ||
-           (comp1_->equals(ct->comp2_) && comp2_->equals(ct->comp1_));
+  if (ct != NULL && ct->comps_ == comps_) {
+    return true;
+  } else {
+    return SecType::equals(st);
   }
-  return false;
 }
 
 void JoinType::collect_dep_expr(set<perm_string> &m) {
-  comp1_->collect_dep_expr(m);
-  comp2_->collect_dep_expr(m);
+  for (auto c : comps_) {
+    c->collect_dep_expr(m);
+  }
 }
 
 SecType *JoinType::freshVars(unsigned int lineno,
                              map<perm_string, perm_string> &m) {
-  return new JoinType(comp1_->freshVars(lineno, m),
-                      comp2_->freshVars(lineno, m));
+  set<SecType*> newcomps;
+  for (auto c: comps_) {
+    newcomps.insert(c->freshVars(lineno, m));
+  }
+  return new JoinType(newcomps);
 }
 
 bool JoinType::hasExpr(perm_string str) {
-  return comp1_->hasExpr(str) || comp2_->hasExpr(str);
+  for (auto c : comps_) {
+    if (c->hasExpr(str)) {
+      return true;
+    }
+  }
+  return false;
 }
+
 bool JoinType::hasTypeVar() {
-  return comp1_->hasTypeVar() || comp2_->hasTypeVar();
+  for (auto c : comps_) {
+      if (c->hasTypeVar()) {
+        return true;
+      }
+    }
+    return false;
 }
 ////////////////////////////////////////////////
 

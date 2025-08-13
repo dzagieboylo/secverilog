@@ -79,24 +79,20 @@ void canonicalizeConstraints(unordered_set<Constraint*> &constraints) {
             cerr << "WARN: found meet type when canonicalizing" << endl;
         }
         JoinType* rightIsJoin = dynamic_cast<JoinType*>(c->right);
+        JoinType* leftIsJoin = dynamic_cast<JoinType*>(c->left);
+        if (leftIsJoin) {
+            cerr << "WARN: found join on left when canonicalizing" << endl;
+        }
         if (rightIsJoin) {
             to_remove.insert(c);
             unordered_set<Constraint*> newconsts;
-            Constraint* left = new Constraint(c->left, rightIsJoin->getFirst(), c->pred);
-            Constraint* right = new Constraint(c->left, rightIsJoin->getSecond(), c->pred);
-            newconsts.insert(left);
-            newconsts.insert(right);
+            for (auto comp : rightIsJoin->getComps()) {
+                newconsts.insert(new Constraint(c->left->simplify(), comp, c->pred));
+            }
             canonicalizeConstraints(newconsts);
             for (auto nc : newconsts) {
                 to_add.insert(nc);
             }
-            if (!to_add.contains(left)) {
-                delete left;
-            }
-            if (!to_add.contains(right)) {
-                delete right;
-            }
-            to_remove.insert(c);
         }
     }
     for (auto rem : to_remove) {
@@ -129,7 +125,7 @@ std::map<perm_string, SecType*> RestrictiveSolver::inferLabels(unordered_set<Con
     while (countSatisfied != constraints.size()) {
         countSatisfied = 0;
         for (auto c : constraints) {
-            VarType* varrhs = dynamic_cast<VarType*>(c->right);
+            VarType* varrhs = dynamic_cast<VarType*>(c->right->simplify());
             auto rhsSub = c->right->substTypeVars(assignments, initType);
             auto lhsSub = c->left->substTypeVars(assignments, initType);
             bool satisfied = rhsSub->checkFlowsTo(lhsSub);
@@ -162,20 +158,17 @@ std::map<perm_string, SecType*> RestrictiveSolver::inferLabels(unordered_set<Con
 std::map<perm_string, SecType*> PermissiveSolver::inferLabels(unordered_set<Constraint*> &constraints, map<perm_string, SecType*> &assignments) {
     size_t countSatisfied = 0;
     SecType* initType = ConstType::BOT;
+    SexpPrinter debug(cerr, 80, 2, true);
     while (countSatisfied != constraints.size()) {
         countSatisfied = 0;
         for (auto c : constraints) {
-            VarType* varlhs = dynamic_cast<VarType*>(c->left->simplify());
-            SexpPrinter debug(cerr, 80, 2, true);
-            auto rhsSub = c->right->substTypeVars(assignments, initType);
-            // cerr << "here1" << endl;
-            auto lhsSub = c->left->substTypeVars(assignments, initType);
-            // cerr << "here2" << endl;
+            VarType* varlhs = dynamic_cast<VarType*>(c->left);
+            auto rhsSub = c->right->substTypeVars(assignments, initType)->simplify();
+            auto lhsSub = c->left->substTypeVars(assignments, initType)->simplify();
             bool satisfied = rhsSub->checkFlowsTo(lhsSub);
             if (!satisfied) {
                 if (!varlhs) {
                     cerr << "Could not satisfy the following constraint:" << endl;
-                    SexpPrinter debug(cerr, 80, 2, true);
                     c->right->dump(debug);
                     cerr << " flows to ";
                     c->left->dump(debug);
@@ -189,8 +182,8 @@ std::map<perm_string, SecType*> PermissiveSolver::inferLabels(unordered_set<Cons
                     countSatisfied += 1;
                 } else {
                     //assign var to Join(var assignment, rhs)
-                    auto tmp = JoinType(getTypeConstraint(varlhs->get_type(), assignments, initType),c->right);
-                    assignments[varlhs->get_type()] = tmp.simplify();
+                    auto tmp = new JoinType(getTypeConstraint(varlhs->get_type(), assignments, initType),c->right);
+                    assignments[varlhs->get_type()] = tmp->simplify();
                 }
             } else {
                 countSatisfied += 1;
@@ -238,7 +231,11 @@ SecType* VarType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* ini
     return tmp;
 }
 SecType* JoinType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
-    auto tmp = new JoinType(comp1_->substTypeVars(varMap, initType), comp2_->substTypeVars(varMap, initType));
+    set<SecType*> newcomps;
+    for (auto c : comps_) {
+        newcomps.insert(c->substTypeVars(varMap, initType));
+    }
+    auto tmp = new JoinType(newcomps);
     if (tmp->equals(this)){
         delete tmp;
         return this;
@@ -247,7 +244,11 @@ SecType* JoinType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* in
     }
 }
 SecType* JoinType::replaceConstTypes() {
-    auto tmp = new JoinType(comp1_->replaceConstTypes(), comp2_->replaceConstTypes());
+    set<SecType*> newcomps;
+    for (auto c : comps_) {
+        newcomps.insert(c->replaceConstTypes());
+    }
+    auto tmp = new JoinType(newcomps);
     if (tmp->equals(this)){
         delete tmp;
         return this;

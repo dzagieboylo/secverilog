@@ -23,7 +23,7 @@ module infer2(
    always@(posedge clk)
      begin
 	if (r1 == 0) begin
-	   r2 <= in_a | in_b;
+	   r2 <= sink_high;	   
 	end else begin
 	   r2 <= 0;	   
 	end

@@ -309,7 +309,13 @@ vector<pair<perm_string, Module*>> toposort(map<perm_string, Module*> modules) {
       bool ready = true;
       for (auto d : dependencies[entry.first]) {
         if (!added.contains(d)) {
-          ready = false; //still waiting on dependency
+          if (!modules.contains(d)) {
+                auto msg = new std::string("Missing dependency: ");
+                *msg += d.str();
+                throw std::runtime_error(*msg);
+          } else {
+            ready = false; //still waiting on dependency
+          }
         }
       }
       if (ready) {

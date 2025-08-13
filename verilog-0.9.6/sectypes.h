@@ -79,14 +79,14 @@ class SecType {
 public:
   virtual ~SecType() {}
   virtual void dump(SexpPrinter &printer) {}
-  virtual bool hasBottom() { return false; }
   virtual bool isBottom() { return false; }
-  virtual bool hasTop() { return false; }
   virtual bool isTop() { return false; }
   virtual SecType *simplify() { _isExplicit = true; return this; } //TODO hack to make sure that simplification prevents further inference, remove later
   virtual SecType *subst(perm_string e1, const str_or_num &e2) { return this; }
   virtual SecType *subst(const map<perm_string, str_or_num> &m) { return this; }
-  virtual bool equals(SecType *st) { return false; }
+  virtual bool equals(SecType *st) { 
+    return (this->isBottom() && st->isBottom()) || (this->isTop() && st->isTop());
+  }
   virtual SecType *next_cycle(BaseTypeMap &baseTypes, SecTypeMap &secTypes) { return this; }
   virtual void collect_dep_expr(set<perm_string> &m){};
   virtual bool isDepType() { return false; };
@@ -124,8 +124,6 @@ public:
   ConstType(perm_string name, bool isExplicit = true);
   ~ConstType();
   void dump(SexpPrinter &printer) { printer << name.str(); }
-  bool hasBottom() { return name == "LOW"; }
-  bool hasTop() { return name == "HIGH"; }
   bool isBottom() { return name == "LOW"; }
   bool isTop() { return name == "HIGH"; }
   bool equals(SecType *st);
@@ -218,24 +216,54 @@ private:
 /* a CompType can be a join/meet of CompTypes */
 class JoinType : public SecType {
 
+  
 public:
+  
+  static SecType* createJoin(SecType *l, SecType *r, bool isExplicit = true) {
+    JoinType* c = new JoinType(l, r, isExplicit);
+    SecType* result = c->simplify();
+    if (c != result) {
+      delete c;
+    }
+    return result;
+  }
+
   JoinType(SecType *, SecType *, bool isExplicit = true);
+  JoinType(set<SecType*>& comps, bool isExplicit = true);
   ~JoinType();
   JoinType &operator=(const JoinType &);
+  
   void dump(SexpPrinter &printer) {
-    printer.startList();
-    printer << "join";
-    comp1_->dump(printer);
-    comp2_->dump(printer);
-    printer.endList();
+    auto iter = comps_.begin();
+    auto last = comps_.end();
+    last--;
+    if (iter == comps_.end()) {
+      throw std::runtime_error("Should be unreachable, a join of 0 elements");
+    } else if (iter == last) {
+      //1 element, just dump it
+      (*iter)->dump(printer);
+    } else {
+      dump_internal(printer, iter, last);
+    }
   }
-  SecType *getFirst();
-  SecType *getSecond();
 
-  bool hasBottom() { return comp1_->hasBottom() || comp2_->hasBottom(); }
-  bool isBottom() { return comp1_->isBottom() && comp2_->isBottom(); }
-  bool hasTop() { return comp1_->hasTop() || comp2_->hasTop(); }
-  bool isTop() { return comp1_->isTop() || comp2_->isTop(); }
+  bool isBottom() { 
+    for (auto c : comps_) {
+      if (!c->isBottom()) {
+        return false;
+      }
+    }
+    return false;
+  }
+  bool isTop() {
+    for (auto c : comps_) {
+      if (!c->isBottom()) {
+        return false;
+      }
+    }
+    return false;
+  }
+  set<SecType*> getComps() { return comps_; }
   SecType *simplify();
   virtual SecType *subst(perm_string e1, const str_or_num &e2);
   virtual SecType *subst(const map<perm_string, str_or_num> &m);
@@ -247,13 +275,31 @@ public:
   virtual bool hasTypeVar();
   virtual void emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod);
   virtual bool checkFlowsTo(SecType* other);
-  bool isDepType() { return comp1_->isDepType() || comp2_->isDepType(); }
+  bool isDepType() { 
+    for (auto c : comps_) {
+      if (c->isDepType()) {
+        return true;
+      }
+    }
+    return false;
+  }
   virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
   virtual SecType* replaceConstTypes();
 
 private:
-  SecType *comp1_;
-  SecType *comp2_;
+  set<SecType*> comps_;
+ void dump_internal(SexpPrinter &printer, set<SecType*>::iterator& start, set<SecType*>::iterator& end) {
+    if (start == end) {
+      (*start)->dump(printer);
+    } else {
+      printer.startList();
+      printer << "join";
+      (*start)->dump(printer);
+      start++;
+      dump_internal(printer, start, end);
+      printer.endList();
+    }
+  }
 };
 
 class MeetType : public SecType {
@@ -272,9 +318,7 @@ public:
   SecType *getFirst();
   SecType *getSecond();
 
-  bool hasBottom() { return comp1_->hasBottom() || comp2_->hasBottom(); }
   bool isBottom() { return comp1_->isBottom() || comp2_->isBottom(); }
-  bool hasTop() { return comp1_->hasTop() || comp2_->hasTop(); }
   bool isTop() { return comp1_->isTop() && comp2_->isTop(); }
   SecType *simplify();
   bool equals(SecType *st);
