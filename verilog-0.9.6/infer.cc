@@ -72,6 +72,7 @@ void removeConstantConstraints(unordered_set<Constraint*> &constraints) {
 void canonicalizeConstraints(unordered_set<Constraint*> &constraints) {
     unordered_set<Constraint*> to_remove;
     unordered_set<Constraint*> to_add;
+
     for (auto c : constraints) {
         MeetType* leftisMeet = dynamic_cast<MeetType*>(c->left);
         MeetType* rightisMeet = dynamic_cast<MeetType*>(c->right);
@@ -217,6 +218,20 @@ SecType* ConstType::replaceConstTypes() {
         return this;
     }
 }
+SecType* canonicalizeSubstitution(VarType* v, SecType* lbl) {
+    //If we have a variable mapping such as:
+    // x => x JOIN y
+    //Then we want to remove the "x maps to itself" with x => y
+    //(this also applies to MEET)
+    //for other types just leave it be for now.
+    JoinType *isJoin     = dynamic_cast<JoinType *>(lbl);
+    MeetType *right_meet     = dynamic_cast<MeetType *>(lbl);//TODO implement for meets
+    if (isJoin) {
+        isJoin->removeLbl(v);
+    }
+    return lbl;
+}
+
 SecType* VarType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* initType) {
     SecType* tmp = getTypeConstraint(varname_, varMap, initType);
     //May map to another type variable, and thus need to recursively substitute
@@ -227,6 +242,8 @@ SecType* VarType::substTypeVars(map<perm_string, SecType*> &varMap, SecType* ini
     //If no initType is provided, then don't recurse (TODO do this cleaner)
     if (tmp->hasTypeVar() && initType && !tmp->equals(this)) {  
         tmp = tmp->substTypeVars(mapCopy, initType);
+        //remove excess copies of this from tmp
+        tmp = canonicalizeSubstitution(this, tmp);
     }
     return tmp;
 }

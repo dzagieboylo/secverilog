@@ -285,6 +285,7 @@ public:
   }
   virtual SecType* substTypeVars(map<perm_string, SecType*>&, SecType* initType);
   virtual SecType* replaceConstTypes();
+  void removeLbl(SecType* l);
 
 private:
   set<SecType*> comps_;

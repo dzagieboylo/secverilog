@@ -367,6 +367,20 @@ JoinType::JoinType(set<SecType*>& lbls, bool isExplicit) {
 
 JoinType::~JoinType() {}
 
+void JoinType::removeLbl(SecType* l) {
+  auto iter = comps_.begin();
+  auto end = comps_.end();
+
+  while(iter != end) {
+    SecType* val = *iter;
+    if (val->equals(l)) {
+      comps_.erase(iter);
+      return;
+    }
+    iter++;
+  }
+}
+
 void JoinType::emitFlowsTo(SexpPrinter &printer, SecType *rhs, Module *mod) {
   printer.startList("and");
   for (auto c : comps_) {
