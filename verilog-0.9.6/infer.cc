@@ -47,7 +47,7 @@ bool infer_baseType(BaseTypeMap &env, PEIdent* ident, BaseType* targetType) {
             result = false;
         }
     } else {
-        cerr << "Warning: tried to check base type of non PEIdent or missing base type" << endl;
+        cerr << "WARN: tried to check base type of non PEIdent or missing base type" << endl;
         return true;
     }
     if (!usedTarget) {

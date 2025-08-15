@@ -299,17 +299,8 @@ Statement *PAssignNB::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &s
   return this;
 }
 
+//Nothing to do here
 Statement *PAssign::next_cycle_transform(BaseTypeMap &baseTypes, SecTypeMap &secTypes) {
-  auto ident = dynamic_cast<PEIdent *>(lval_);
-  BaseType* expected = new ComType(true);//must be set to explicit
-  bool success = infer_baseType(baseTypes, ident, expected);
-  if (!success) {
-    auto msg = new std::string("tried to use blocking assign on seq var: ");
-    *msg += ident->get_name().str();
-    *msg += " on line ";
-    *msg += get_fileline();
-    throw std::runtime_error(*msg);
-  }
   return this;
 }
 
@@ -1201,14 +1192,22 @@ void typecheck_assignment(SexpPrinter &printer, PExpr *lhs, PExpr *rhs,
       // want next cycle version if is NextType
       ltype = lident->typecheckName(env.varsToBase, env.varsToType, lbase->isNextType());
     } else if (lconcat != NULL) {
-      ltype_orig = lconcat->typecheck(env.varsToBase, env.varsToType);
-      // want next cycle version if is NextType
-      ltype = ltype_orig;
+      //TODO handle PEConcat on LHS more accurately.
+      //Technically we want to line up the bit positions and make sure that each bit on RHS can assign to the same position on LHS
+      //But this is difficult.
+      //Instead, approximating by checking that
+      //RHS can assign to EACH of LHS (first approximation)
+      auto params = lconcat->getParams();
+      for (unsigned int i = 0; i < params.count(); i++) {
+        typecheck_assignment(printer, params[i], rhs, env, precond, postcond,  lineno, note, is_blocking, defAssgns);
+      }
+      return;
+      // ltype_orig = lconcat->typecheck(env.varsToBase, env.varsToType);
+      // // want next cycle version if is NextType
+      // ltype = ltype_orig;
       //TODO fix so that ltype is the next cycle version
       //lconcat->typecheckName(env.varsToBase, env.varsToType, lbase->isNextType());
     } else {
-      //TODO handle PEConcat on LHS -> need to check that RHS
-      //can assign to EACH of LHS (first approximation)
       auto msg = new std::string("Assigned to non identifier on LHS: ");
       *msg += lhs->get_name().str();
       throw std::runtime_error(*msg);
@@ -1583,9 +1582,21 @@ void PAssign::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
     cerr << *rval() << ";" << endl;
   }
 
+  
   auto ident = dynamic_cast<PEIdent *>(lval_);
+  auto concat = dynamic_cast<PEConcat *>(lval_); //only handle these two types for now
   BaseType* expected = new ComType(true);//must be set to explicit
-  bool success = infer_baseType(env.varsToBase, ident, expected);
+  bool success = true;
+  if (ident) {
+    success &= infer_baseType(env.varsToBase, ident, expected);
+  }
+  if (concat) {
+    auto params = concat->getParams();
+    for (unsigned int i = 0; i < params.count(); i++) {
+      BaseType* expected = new ComType(true);//must be set to explicit
+      success &= infer_baseType(env.varsToBase, dynamic_cast<PEIdent*>(params[i]), expected);
+    }
+  }
   if (!success) {
     auto msg = new std::string("tried to use nonblocking assign on nonseq var: ");
     *msg += ident->get_name().str();
