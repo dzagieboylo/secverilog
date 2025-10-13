@@ -103,7 +103,7 @@ public:
      * and a set of target type variables, resolve assignments as much as possible
      * so that no type variables in the assignment.
      * E.g., if L(x) = L(y) and L(y) = TOP, then resolve L(x) = TOP
-     * Then create constraints that imply these equality (L(x) <= TOP, TOP <= L(x))
+     * Then create constraints that imply these equalities (L(x) <= TOP, TOP <= L(x))
      */
     unordered_set<Constraint*> createOutputConstraints(map<perm_string, SecType*> &assignments) {
         unordered_set<Constraint*> result;
@@ -133,6 +133,16 @@ public:
         return result;
     }
 
+    void printOutputAssignments(map<perm_string, SecType*> &assignments, SexpPrinter &printer) {
+        for (auto a : assignments) {
+            if (_outputNames.contains(a.first)) {
+                printer << a.first << " = ";
+                auto tmp = a.second->substTypeVars(assignments, ConstType::TOP);
+                tmp->dump(printer);
+                printer.lineBreak();
+            }
+        }
+    }
     virtual void setInputs(set<perm_string> inputNames) {
         _inputNames = inputNames; //just copy
     }

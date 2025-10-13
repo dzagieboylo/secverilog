@@ -111,6 +111,7 @@ FILE *depend_file  = NULL;
 
 char *lattice_file_name = NULL;
 char *depfun_file_name  = NULL;
+
 /*
  * These are the warning enable flags.
  */
@@ -477,7 +478,7 @@ static bool set_default_timescale(const char *ts_string) {
  *
  *    latticefile:<path>
  *        Give the path to a z3 file that defines a security lattice.
- *
+ * 
  *    flag:<name>=<string>
  *        Generic compiler flag strings.
  *
@@ -583,6 +584,8 @@ static void read_iconfig_file(const char *ipath) {
       lattice_file_name = strdup(cp);
     } else if (strcmp(buf, "depfunfile") == 0) {
       depfun_file_name = strdup(cp);
+    } else if (strcmp(buf, "outconst") == 0) {
+      summarize_labels = true;
     } else if (strcmp(buf, "flag") == 0) {
       string parm = cp;
       parm_to_flagmap(parm);
@@ -715,7 +718,7 @@ static void read_iconfig_file(const char *ipath) {
 
 extern Design *elaborate(list<perm_string> root);
 extern void typecheck(map<perm_string, Module *> modules,
-                      char *lattice_file_name, char *depfun_file_name);
+                      char *lattice_file_name, char *depfun_file_name, bool output_inference);
 
 #if defined(HAVE_TIMES)
 static double cycles_diff(struct tms *a, struct tms *b) {
@@ -845,6 +848,7 @@ int main(int argc, char *argv[]) {
             "\t-P <file>        Write the parsed input to <file>.\n"
             "\t-p <assign>      Set a parameter value.\n"
             "\t-z               Type check only.\n"
+            "\t-i               Output infferred typecheck constraints to file.\n"
             "\t-x               Skip typechecking.\n"
             "\t-v               Print progress indications"
 #if defined(HAVE_TIMES)
@@ -1038,7 +1042,7 @@ int main(int argc, char *argv[]) {
     }
     if (debug_typecheck)
       fprintf(stderr, "about to typecheck\n");
-    typecheck(pform_modules, lattice_file_name, depfun_file_name);
+    typecheck(pform_modules, lattice_file_name, depfun_file_name, summarize_labels);
     if (debug_typecheck)
       fprintf(stderr, "done with typecheck\n");
   }

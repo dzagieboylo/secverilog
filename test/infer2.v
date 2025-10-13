@@ -19,7 +19,6 @@ module infer2(
    reg		    r1;
    reg		    r2;   
 
-   //TODO handle information loops r1 <= r2 <= r1...
    always@(posedge clk)
      begin
 	if (r1 == 0) begin

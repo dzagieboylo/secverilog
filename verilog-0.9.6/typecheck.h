@@ -98,6 +98,11 @@ void output_lattice(SexpPrinter &out, char *lattice) {
     while (getline(infile, line)) {
       out.writeRawLine(line);
     }
+  } else {
+    //assert that HIGH and LOW are the only possible labels
+    out.lineBreak();
+    out.addComment("No user defined lattice - all labels are TOP or BOT");
+    out.singleton("assert (forall ((x Label)) (or (= x HIGH) (= x LOW)))");
   }
 }
 

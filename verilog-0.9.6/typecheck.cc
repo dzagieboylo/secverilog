@@ -2148,7 +2148,7 @@ void PWhile::typecheck(SexpPrinter &printer, TypeEnv &env, Predicate &pred,
  * for each root, does the type check.
  */
 void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
-               char *depfun_file_name) {
+               char *depfun_file_name, bool output_module_output_constraints) {
   
   map<perm_string, BaseTypeMap> module_base_types;
   map<perm_string, SecTypeMap> module_sec_types;
@@ -2163,6 +2163,7 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
   auto sorted_modules = toposort(modules);
   for (auto entry : sorted_modules) {
     auto name = entry.first;
+    cerr << "Typechecking module: " << name << endl;
     Module *rmod = entry.second;
     TypeEnv env = TypeEnv(module_sec_types[entry.first], module_base_types[entry.first], ConstType::BOT, rmod);
     //Do are path analysis before re-writing LHS w/ next-types
@@ -2254,6 +2255,7 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     //Save constraints on input and output ports
     moduleInputConstraints[name] = solver.getInputConstraints(allConsts, assgns);
     moduleOutputConstraints[name] = solver.createOutputConstraints(assgns);
+
     if (debug_typecheck) {
       cerr << "Here are the Input constraints for " << name << endl;
       for (auto c : moduleInputConstraints[name]) {
@@ -2263,6 +2265,12 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
       for (auto c : moduleOutputConstraints[name]) {
         dump_constraint(debug, *c, empty, env);
       }
+    }
+    //output module constraints as a separate result if requested:
+    if (output_module_output_constraints) {
+      auto const_f = createOutputFile(name, ".constraints", false);
+      SexpPrinter const_out = SexpPrinter(const_f, 80, 2, true);
+      solver.printOutputAssignments(assgns, const_out);
     }
 
     //Output the inferred label constraints for all VarTypes in this module to the z3 file
@@ -2310,4 +2318,3 @@ void typecheck(map<perm_string, Module *> modules, char *lattice_file_name,
     z3file.close();
   }
 }
-
